@@ -30,16 +30,16 @@ import numpy as np
 import pandas as pd
 import pyarrow.ipc as ipc
 import pyarrow.parquet as pq
+import uproot
 from matplotlib.ticker import FormatStrFormatter
 
 
-def get_channel_hits(file_path: Path, batch_size: int = 100_000) -> pd.DataFrame:
+def get_channel_hits(file_path: Path, batch_size: int = 100_000, root_tree: str = "sampic_hits") -> pd.DataFrame:
     """
-    Summarize hit counts per channel for a large Feather or Parquet file
+    Summarize hit counts per channel for a large Feather, Parquet, or ROOT file
     produced by the Sampic decoder.
 
-    This reads only the “Channel” column in fixed‐size batches, so it
-    never loads the full file into memory.
+    Reads only the 'Channel' column in fixed-size batches to limit memory use.
 
     Args:
         file_path: Path to the input .feather or .parquet file.
@@ -72,6 +72,15 @@ def get_channel_hits(file_path: Path, batch_size: int = 100_000) -> pd.DataFrame
                 uniques, cnts = np.unique(arr, return_counts=True)
                 for ch, cnt in zip(uniques, cnts):
                     counts[int(ch)] += int(cnt)
+
+    elif suffix == ".root":
+        # ROOT: use uproot.iterate to stream the 'Channel' branch
+        tree_path = f"{file_path}:{root_tree}"
+        for batch in uproot.iterate(tree_path, ["Channel"], step_size=batch_size):
+            arr = batch["Channel"]
+            uniques, cnts = np.unique(arr, return_counts=True)
+            for ch, cnt in zip(uniques, cnts):
+                counts[int(ch)] += int(cnt)
 
     else:
         raise ValueError(f"Unsupported file format: {file_path.suffix}")
