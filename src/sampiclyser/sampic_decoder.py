@@ -543,6 +543,43 @@ class SAMPIC_Run_Decoder:
 
         return retVal
 
+    def prepare_root_header_metadata(self):
+        retVal = {
+            'software_version': self.run_header.software_version,
+            'timestamp': self.run_header.timestamp,
+            'sampic_mezzanine_board_version': self.run_header.sampic_mezzanine_board_version,
+            'num_channels': self.run_header.num_channels,
+            'ctrl_fpga_firmware_version': self.run_header.ctrl_fpga_firmware_version,
+            # front_end_fpga_firmware_version: List[str] = field(default_factory=list)
+            # front_end_fpga_baseline: List[float] = field(default_factory=list)
+            'sampling_frequency': self.run_header.sampling_frequency,
+            'enabled_channels_mask': self.run_header.enabled_channels_mask,
+            'reduced_data_type': self.run_header.reduced_data_type,
+            'without_waveform': self.run_header.without_waveform,
+            'tdc_like_files': self.run_header.tdc_like_files,
+            'hit_number_format': self.run_header.hit_number_format,
+            'unix_time_format': self.run_header.unix_time_format,
+            'data_format': self.run_header.data_format,
+            'trigger_position_format': self.run_header.trigger_position_format,
+            'data_samples_format': self.run_header.data_samples_format,
+            'inl_correction': self.run_header.inl_correction,
+            'adc_correction': self.run_header.adc_correction,
+        }
+
+        return retVal
+
+    def write_root_header(self, froot: uproot.WritableDirectory):
+        metadata = self.prepare_root_header_metadata()
+
+        # Encode everything as fixed‐length byte strings
+        keys = np.array(list(metadata.keys()), dtype=f"S{max(len(k) for k in metadata)}")
+        vals = np.array([str(v) for v in metadata.values()], dtype=f"S{max(len(str(v)) for v in metadata.values())}")
+
+        froot["metadata"] = {
+            "key": keys,
+            "value": vals,
+        }
+
     def decode_data(  # noqa: max-complexity=24
         self,
         limit_hits: int = 0,
@@ -725,6 +762,9 @@ class SAMPIC_Run_Decoder:
                 feather_writer.write(table)
             if root_tree_obj and not root_written:
                 root_tree_obj.extend(get_root_data_with_schema(df_batch))  # df_batch.to_dict(orient="list"))
+
+        if root_path:
+            self.write_root_header(froot)
 
         # Close writers
         if parquet_writer:
