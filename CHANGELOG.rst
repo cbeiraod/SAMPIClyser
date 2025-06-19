@@ -4,6 +4,8 @@ Changelog
 Current (2025-06-19)
 --------------------
 
+* Added script with an entrypoint for running the conversion tool from the command line
+
 
 0.0.2 (2024-06-19)
 ------------------
