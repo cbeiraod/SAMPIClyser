@@ -496,7 +496,6 @@ class SAMPIC_Run_Decoder:
                     # parse as many complete records as we can
                     while True:
                         if limit_hits > 0 and hits >= limit_hits:
-                            return
                             return_now = True
                             break
                         rec = try_parse_record()
