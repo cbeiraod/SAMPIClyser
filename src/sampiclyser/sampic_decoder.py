@@ -520,25 +520,25 @@ class SAMPIC_Run_Decoder:
 
     def prepare_header_metadata(self):
         retVal = {
-            'software_version': self.run_header.software_version,
-            'timestamp': self.run_header.timestamp,
-            'sampic_mezzanine_board_version': self.run_header.sampic_mezzanine_board_version,
-            'num_channels': self.run_header.num_channels,
-            'ctrl_fpga_firmware_version': self.run_header.ctrl_fpga_firmware_version,
+            b'software_version': bytes(self.run_header.software_version),
+            b'timestamp': bytes(self.run_header.timestamp),
+            b'sampic_mezzanine_board_version': bytes(self.run_header.sampic_mezzanine_board_version),
+            b'num_channels': bytes(self.run_header.num_channels),
+            b'ctrl_fpga_firmware_version': bytes(self.run_header.ctrl_fpga_firmware_version),
             # front_end_fpga_firmware_version: List[str] = field(default_factory=list)
             # front_end_fpga_baseline: List[float] = field(default_factory=list)
-            'sampling_frequency': self.run_header.sampling_frequency,
-            'enabled_channels_mask': self.run_header.enabled_channels_mask,
-            'reduced_data_type': self.run_header.reduced_data_type,
-            'without_waveform': self.run_header.without_waveform,
-            'tdc_like_files': self.run_header.tdc_like_files,
-            'hit_number_format': self.run_header.hit_number_format,
-            'unix_time_format': self.run_header.unix_time_format,
-            'data_format': self.run_header.data_format,
-            'trigger_position_format': self.run_header.trigger_position_format,
-            'data_samples_format': self.run_header.data_samples_format,
-            'inl_correction': self.run_header.inl_correction,
-            'adc_correction': self.run_header.adc_correction,
+            b'sampling_frequency': bytes(self.run_header.sampling_frequency),
+            b'enabled_channels_mask': bytes(self.run_header.enabled_channels_mask),
+            b'reduced_data_type': bytes(self.run_header.reduced_data_type),
+            b'without_waveform': bytes(self.run_header.without_waveform),
+            b'tdc_like_files': bytes(self.run_header.tdc_like_files),
+            b'hit_number_format': bytes(self.run_header.hit_number_format),
+            b'unix_time_format': bytes(self.run_header.unix_time_format),
+            b'data_format': bytes(self.run_header.data_format),
+            b'trigger_position_format': bytes(self.run_header.trigger_position_format),
+            b'data_samples_format': bytes(self.run_header.data_samples_format),
+            b'inl_correction': bytes(self.run_header.inl_correction),
+            b'adc_correction': bytes(self.run_header.adc_correction),
         }
 
         return retVal
@@ -666,6 +666,8 @@ class SAMPIC_Run_Decoder:
 
             df_batch = pd.DataFrame(buffer)
             convert_df_with_schema(df_batch)
+            if first:
+                schema = schema.with_metadata(self.prepare_header_metadata())
             table = pa.Table.from_pandas(df_batch, schema=schema, preserve_index=False)
             df_batch.reset_index(drop=True, inplace=True)
 
@@ -698,6 +700,8 @@ class SAMPIC_Run_Decoder:
         if buffer:
             df_batch = pd.DataFrame(buffer)
             convert_df_with_schema(df_batch)
+            if first:
+                schema = schema.with_metadata(self.prepare_header_metadata())
             table = pa.Table.from_pandas(df_batch, schema=schema, preserve_index=False)
             df_batch.reset_index(drop=True, inplace=True)
 
