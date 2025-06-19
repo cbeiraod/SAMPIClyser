@@ -1,0 +1,40 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+# To install the git pre-commit hook run:
+#   pre-commit install
+# To update the pre-commit hooks run:
+#   pre-commit install-hooks
+exclude: '^(\.tox|ci/templates|\.bumpversion\.cfg)(/|$)'
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.5.0
+  hooks:
+    - id: trailing-whitespace
+    - id: end-of-file-fixer
+    - id: debug-statements
+    - id: check-yaml
+    - id: check-added-large-files
+
+- repo: https://github.com/pycqa/isort
+  rev: 5.13.2
+  hooks:
+    - id: isort
+      name: isort (python)
+
+  # Using this mirror lets us use mypyc-compiled black, which is about 2x faster
+  # Alternative: https://github.com/psf/black
+- repo: https://github.com/psf/black-pre-commit-mirror
+  rev: 24.1.1
+  hooks:
+    - id: black
+      # It is recommended to specify the latest version of Python
+      # supported by your project here, or alternatively use
+      # pre-commit's default_language_version, see
+      # https://pre-commit.com/#top_level-default_language_version
+      language_version: python3.11
+
+- repo: https://github.com/pycqa/flake8
+  rev: 7.0.0
+  hooks:
+    - id: flake8
+      additional_dependencies: [Flake8-pyproject]
