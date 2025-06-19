@@ -23,7 +23,7 @@
 
 from __future__ import annotations
 
-__version__ = '0.0.0'
+__version__ = '0.0.1'
 
 from .sampic_decoder import SAMPIC_Run_Decoder
 
