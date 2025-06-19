@@ -2,6 +2,60 @@
 SAMPIClyser
 """""""""""""
 
+.. start-badges
+
+|pre-commit|
+
+|black| |flake8| |isort|
+
+|docs|
+
+|version| |wheel| |supported-versions| |supported-implementations|
+
+|commits-since|
+
+.. |black| image:: https://img.shields.io/badge/code%20style-black-000000
+    :target: https://github.com/psf/black
+    :alt: black
+
+.. |flake8| image:: https://img.shields.io/badge/flake8-checked-blueviolet
+    :target: https://github.com/PyCQA/flake8
+    :alt: flake8
+
+.. |isort| image:: https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336
+    :target: https://pycqa.github.io/isort/
+    :alt: isort
+
+.. |pre-commit| image:: https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit
+    :target: https://github.com/pre-commit/pre-commit
+    :alt: pre-commit
+
+.. |docs| image:: https://readthedocs.org/projects/sampiclyser/badge/?version=latest
+    :target: https://sampiclyser.readthedocs.io/
+    :alt: Documentation Status
+
+.. |version| image:: https://img.shields.io/pypi/v/SAMPIClyser.svg
+    :alt: PyPI Package latest release
+    :target: https://pypi.org/project/SAMPIClyser
+
+.. |wheel| image:: https://img.shields.io/pypi/wheel/SAMPIClyser.svg
+    :alt: PyPI Wheel
+    :target: https://pypi.org/project/SAMPIClyser
+
+.. |supported-versions| image:: https://img.shields.io/pypi/pyversions/SAMPIClyser.svg
+    :alt: Supported versions
+    :target: https://pypi.org/project/SAMPIClyser
+
+.. |supported-implementations| image:: https://img.shields.io/pypi/implementation/SAMPIClyser.svg
+    :alt: Supported implementations
+    :target: https://pypi.org/project/SAMPIClyser
+
+.. |commits-since| image:: https://img.shields.io/github/commits-since/cbeiraod/SAMPIClyser/v0.0.0.svg
+    :alt: Commits since latest release
+    :target: https://github.com/cbeiraod/SAMPIClyser/compare/v0.0.0...main
+
+.. end-badges
+
 Python library to help decoding and analysing data from a SAMPIC system
 
 * Free software: Zlib license
