@@ -4,6 +4,10 @@ Changelog
 Current (2025-06-19)
 --------------------
 
+
+0.0.3 (2024-06-19)
+------------------
+
 * Added script with an entrypoint for running the conversion tool from the command line
 * Added hit calculation on root files
 * Added header as metadata for feather and parquet files
