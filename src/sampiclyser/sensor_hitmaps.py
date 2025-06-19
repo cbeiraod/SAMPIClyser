@@ -22,6 +22,7 @@
 #############################################################################
 
 from dataclasses import dataclass
+from math import floor
 from typing import Dict
 from typing import Sequence
 from typing import Tuple
@@ -49,6 +50,28 @@ class SensorSpec:
     # a possible mirroring of coordinates is assumed
     global_rotation_units: int = 0  # how many 90 degree rotations
     global_flip: bool = False
+
+
+# Possible sensors
+spec1 = SensorSpec(
+    name="Sensor A",
+    sampic_map={0: 0, 1: 1, 2: 24},
+    geometry=("grid", 5, 5, {i: (floor(i / 5), i % 5) for i in range(25)}),
+    global_rotation_units=0,
+    # global_flip=True,
+)
+
+spec2 = SensorSpec(
+    name="Sensor B",
+    sampic_map={0: 0, 4: 1, 5: 2},
+    geometry=("grouped", {0: [(0, 0), (0, 1)], 1: [(1, 0), (1, 1)], 2: [(4, 4), (3, 3)]}, 5, 5),
+    global_rotation_units=0,
+    # global_flip=True,
+)
+
+spec3 = SensorSpec(
+    name="Sensor C", sampic_map={0: "A", 1: "B", 2: "C"}, geometry=("scatter", {"A": (0.5, 0.5), "B": (1.5, 0.5), "C": (4.5, 4.5)}, 1, 1)
+)
 
 
 def convert_nrows_ncols_to_global(nrows: int, ncols: int, rotations: int):
