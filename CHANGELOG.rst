@@ -4,6 +4,8 @@ Changelog
 Current (2025-06-19)
 --------------------
 
+* Fixed metadata storing
+
 
 0.0.3 (2024-06-19)
 ------------------

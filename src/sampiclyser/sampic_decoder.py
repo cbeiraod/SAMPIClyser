@@ -23,6 +23,7 @@
 
 import mmap
 import re
+import struct
 from contextlib import contextmanager
 from dataclasses import dataclass
 from dataclasses import field
@@ -36,6 +37,7 @@ from typing import List
 from typing import Optional
 from typing import Tuple
 
+import awkward as ak
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -520,23 +522,23 @@ class SAMPIC_Run_Decoder:
 
     def prepare_header_metadata(self):
         retVal = {
-            b'software_version': bytes(self.run_header.software_version),
-            b'timestamp': bytes(self.run_header.timestamp),
-            b'sampic_mezzanine_board_version': bytes(self.run_header.sampic_mezzanine_board_version),
+            b'software_version': self.run_header.software_version.encode('ascii'),
+            b'timestamp': struct.pack('<d', self.run_header.timestamp.timestamp()),
+            b'sampic_mezzanine_board_version': self.run_header.sampic_mezzanine_board_version.encode('ascii'),
             b'num_channels': bytes(self.run_header.num_channels),
-            b'ctrl_fpga_firmware_version': bytes(self.run_header.ctrl_fpga_firmware_version),
+            b'ctrl_fpga_firmware_version': self.run_header.ctrl_fpga_firmware_version.encode('ascii'),
             # front_end_fpga_firmware_version: List[str] = field(default_factory=list)
             # front_end_fpga_baseline: List[float] = field(default_factory=list)
-            b'sampling_frequency': bytes(self.run_header.sampling_frequency),
+            b'sampling_frequency': self.run_header.sampling_frequency.encode('ascii'),
             b'enabled_channels_mask': bytes(self.run_header.enabled_channels_mask),
             b'reduced_data_type': bytes(self.run_header.reduced_data_type),
             b'without_waveform': bytes(self.run_header.without_waveform),
             b'tdc_like_files': bytes(self.run_header.tdc_like_files),
-            b'hit_number_format': bytes(self.run_header.hit_number_format),
-            b'unix_time_format': bytes(self.run_header.unix_time_format),
-            b'data_format': bytes(self.run_header.data_format),
-            b'trigger_position_format': bytes(self.run_header.trigger_position_format),
-            b'data_samples_format': bytes(self.run_header.data_samples_format),
+            b'hit_number_format': self.run_header.hit_number_format.encode('ascii'),
+            b'unix_time_format': self.run_header.unix_time_format.encode('ascii'),
+            b'data_format': self.run_header.data_format.encode('ascii'),
+            b'trigger_position_format': self.run_header.trigger_position_format.encode('ascii'),
+            b'data_samples_format': self.run_header.data_samples_format.encode('ascii'),
             b'inl_correction': bytes(self.run_header.inl_correction),
             b'adc_correction': bytes(self.run_header.adc_correction),
         }
@@ -571,9 +573,12 @@ class SAMPIC_Run_Decoder:
     def write_root_header(self, froot: uproot.WritableDirectory):
         metadata = self.prepare_root_header_metadata()
 
+        keys = ak.from_iter(list(metadata.keys()), highlevel=True)
+        vals = ak.from_iter([str(v) for v in metadata.values()], highlevel=True)
+
         # Encode everything as fixed‐length byte strings
-        keys = np.array(list(metadata.keys()), dtype=f"S{max(len(k) for k in metadata)}")
-        vals = np.array([str(v) for v in metadata.values()], dtype=f"S{max(len(str(v)) for v in metadata.values())}")
+        # keys = np.array(list(metadata.keys()), dtype=f"S{max(len(k) for k in metadata)}")
+        # vals = np.array([str(v) for v in metadata.values()], dtype=f"S{max(len(str(v)) for v in metadata.values())}")
 
         froot["metadata"] = {
             "key": keys,
