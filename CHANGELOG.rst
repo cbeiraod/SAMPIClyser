@@ -1,10 +1,11 @@
 Changelog
 =========
 
-Current (2025-06-19)
+Current (2025-06-26)
 --------------------
 
 * Fixed metadata storing
+* Fixed metadata stored in bytes so that actualy data is actually stored
 
 
 0.0.3 (2024-06-19)
