@@ -39,6 +39,46 @@ from matplotlib.patches import Rectangle
 
 @dataclass
 class SensorSpec:
+    """
+    Specification for plotting a single sensor's hitmap, including local-to-global coordinate mapping.
+
+    Supports three geometry types (grid, grouped, scatter) and optional global
+    transformations (multiples of 90° rotations and an optional mirror flip).
+
+    Attributes
+    ----------
+    name : str
+        Human-readable title for the sensor (used as the subplot title).
+    sampic_map : dict of int → int
+        Mapping from SAMPIC channel indices to sensor channel identifiers.
+    geometry : tuple
+        Defines the sensor's layout and drawing method. The first element is
+        the geometry type, one of:
+
+        - `"grid"`
+          A regular n_rows × n_cols grid with 1:1 channel→pixel mapping:
+          (`"grid"`, n_rows, n_cols, chan2coord) where `chan2coord` maps
+          sensor channel → (row, col) coordinates.
+        - `"grouped"`
+          Multiple pixels per channel on a grid:
+          (`"grouped"`, chan2pixels, n_rows, n_cols) where `chan2pixels` maps
+          sensor channel → list of (row, col) pixel coordinates.
+        - `"scatter"`
+          Arbitrary pixel centers and sizes:
+          (`"scatter"`, chan2coords, pixel_width, pixel_height) where
+          `chan2coords` maps sensor channel → (x, y) center coordinates.
+
+    cmap : str
+        Name of the Matplotlib colormap to use for this sensor
+        (default: `"viridis"`).
+    global_rotation_units : int
+        Number of 90° clockwise rotations to apply to the local coordinate
+        system to obtain the global orientation (0-3).
+    global_flip : bool
+        If True, mirror the coordinates horizontally *before* rotation to align
+        the local layout with the global coordinate frame.
+    """
+
     name: str
     sampic_map: Dict[int, int]
     geometry: Tuple  # e.g., ("grid", nrows, ncols, chan2coord),
@@ -74,27 +114,96 @@ spec3 = SensorSpec(
 )
 
 
-def convert_nrows_ncols_to_global(nrows: int, ncols: int, rotations: int):
+def convert_nrows_ncols_to_global(nrows: int, ncols: int, rotations: int) -> tuple[int, int]:
+    """
+    Compute the global grid dimensions after applying quarter-turn rotations.
+
+    Parameters
+    ----------
+    nrows : int
+        Number of rows in the local (unrotated) grid.
+    ncols : int
+        Number of columns in the local (unrotated) grid.
+    rotations : int
+        Number of 90° clockwise rotations to apply. Only the parity of
+        `rotations` modulo 2 affects the shape: even → no swap,
+        odd → swap rows and columns.
+
+    Returns
+    -------
+    global_nrows : int
+        Number of rows in the grid after rotation.
+    global_ncols : int
+        Number of columns in the grid after rotation.
+
+    Examples
+    --------
+    >>> convert_nrows_ncols_to_global(10, 5, 0)
+    (10, 5)
+    >>> convert_nrows_ncols_to_global(10, 5, 1)
+    (5, 10)
+    >>> convert_nrows_ncols_to_global(10, 5, 2)
+    (10, 5)
+    >>> convert_nrows_ncols_to_global(10, 5, 3)
+    (5, 10)
+    """
     if rotations % 2 == 0:
         return nrows, ncols
     else:
         return ncols, nrows
 
 
-def convert_r_c_to_global(r_local: int, c_local: int, rotations: int, do_mirror: bool, nrows: int, ncols: int):
-    r = r_local
-    if do_mirror:
-        c = ncols - 1 - c_local
-    else:
-        c = c_local
+def convert_r_c_to_global(r_local: int, c_local: int, rotations: int, do_mirror: bool, nrows: int, ncols: int) -> tuple[int, int]:
+    """
+    Map local (row, column) indices to global coordinates with optional mirroring and rotation.
 
-    if rotations == 0:
+    Parameters
+    ----------
+    r_local : int
+        Row index in the sensor's local coordinate system (0-based).
+    c_local : int
+        Column index in the sensor's local coordinate system (0-based).
+    rotations : int
+        Number of 90° clockwise rotations to apply. Effective rotations are
+        taken modulo 4 (i.e. 0, 1, 2, or 3).
+    do_mirror : bool
+        If True, reflect the column coordinate horizontally *before* rotation.
+    nrows : int
+        Total number of rows in the local grid.
+    ncols : int
+        Total number of columns in the local grid.
+
+    Returns
+    -------
+    r_global, c_global : tuple of int
+        The transformed (row, column) in the global coordinate system after
+        applying mirroring and rotation.
+
+    Notes
+    -----
+    - Mirroring (if enabled) flips `c_local` to `ncols - 1 - c_local`.
+    - Rotation is performed clockwise in 90° increments:
+      - 0 → (r, c)
+      - 1 → (c, nrows - 1 - r)
+      - 2 → (nrows - 1 - r, ncols - 1 - c)
+      - 3 → (ncols - 1 - c, r)
+    - Inputs outside expected ranges (e.g. negative indices) are not checked,
+      so passing invalid `r_local`/`c_local` may lead to unexpected results.
+    """
+    # Apply mirror if requested
+    r = r_local
+    c = (ncols - 1 - c_local) if do_mirror else c_local
+
+    # Normalize rotations into [0,3]
+    rot = rotations % 4
+
+    if rot == 0:
         return (r, c)
-    if rotations == 1:
+    if rot == 1:
         return (c, nrows - 1 - r)
-    if rotations == 2:
+    if rot == 2:
         return (nrows - 1 - r, ncols - 1 - c)
-    if rotations == 3:
+    if rot == 3:
         return (ncols - 1 - c, r)
 
 
@@ -108,8 +217,52 @@ def _plot_grid_sensor(
     center_fontsize: int = 14,
     coordinates: str = "local",
 ):
-    """Plot a 2D grid sensor, masking out zero-hit pixels, drawing borders,
-    and annotating each pixel with its board channel."""
+    """
+    Render a grid-based sensor hitmap on the given axes.
+
+    Pixels with zero hits are left transparent; nonzero pixels are drawn
+    as colored squares with a black border. Optionally, each cell can be
+    annotated with its SAMPIC or board channel index in either the local
+    or global coordinate system.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes into which to draw the grid hitmap.
+    spec : SensorSpec
+        Specification for this sensor, including:
+        - `geometry = ("grid", nrows, ncols, chan2coord)`
+          where `chan2coord` maps board channel → (row, col).
+    hits_by_chan : dict of int → int
+        Mapping from SAMPIC channel index to its total hit count.
+    norm : matplotlib.colors.Normalize
+        Normalization instance for mapping hit counts to the colormap.
+    do_sampic_ch : bool, optional
+        If True, annotate each cell with the SAMPIC channel index.
+        Default is False.
+    do_board_ch : bool, optional
+        If True, annotate each cell with the board channel index.
+        Default is False.
+    center_fontsize : int, optional
+        Font size (in points) for channel-number annotations at each cell center.
+        Default is 14.
+    coordinates : {'local', 'global'}, optional
+        Coordinate system for plotting:
+        - 'local': use the raw (row, col) as given in `chan2coord`.
+        - 'global': apply `spec.global_rotation_units` and `spec.global_flip`
+          to convert to the global frame.
+
+    Returns
+    -------
+    im : matplotlib.image.AxesImage
+        The AxesImage object returned by `ax.imshow`, for use with colorbars.
+
+    Notes
+    -----
+    - Cells with zero hits are masked (transparent) to highlight active pixels.
+    - The black border is drawn around every nonmasked cell for consistency
+      with other sensor geometry plots.
+    """
     _, nrows, ncols, chan2coord = spec.geometry
     rotations = spec.global_rotation_units % 4
     do_mirror = spec.global_flip
@@ -163,9 +316,51 @@ def _plot_grouped_sensor(
     do_board_ch: bool = False,
     center_fontsize: int = 14,
     coordinates: str = "local",
-):
-    """Plot a grouped-pixel sensor with light-grey internal borders,
-    black outline around each group, and annotate group center with board channel."""
+) -> None:
+    """
+    Render a grouped-pixel sensor hitmap with dual-level outlining and annotations.
+
+    Draws each pixel in a group with a light-grey interior border, a single
+    bold black outline around the group's bounding box, and optional
+    channel-index labels at the group center.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes on which to draw the hitmap.
+    spec : SensorSpec
+        Sensor specification with `geometry = ("grouped", chan2pixels, nrows, ncols)`,
+        where `chan2pixels` maps board channel → list of (row, col) tuples.
+    hits_by_chan : dict of int → int
+        Mapping from SAMPIC channel index to its hit count.
+    norm : matplotlib.colors.Normalize
+        Normalization for mapping hit counts to colormap values.
+    do_sampic_ch : bool, optional
+        If True, annotate each group with the SAMPIC channel index.
+    do_board_ch : bool, optional
+        If True, annotate each group with the board channel index.
+    center_fontsize : int, optional
+        Font size for the annotation placed at the group's center
+        (default: 14).
+    coordinates : {'local', 'global'}, optional
+        Coordinate system for pixel placement and annotation:
+        - 'local': use raw (row, col) as given.
+        - 'global': apply `spec.global_rotation_units` and `spec.global_flip`
+          to convert to global coordinates.
+
+    Returns
+    -------
+    None
+        Draws directly onto `ax`; no return value.
+
+    Notes
+    -----
+    - Colors are assigned per group via `ax.add_patch(Rectangle(..., facecolor=...) )`
+      using `norm` and `spec.cmap`.
+    - Internal pixel borders use a light-grey edge; the outer group border
+      is drawn once around the minimal rectangle enclosing all member pixels.
+    - Channel-index annotations are centered within the group's bounding box.
+    """
     _, chan2pixels, nrows, ncols = spec.geometry
     rotations = spec.global_rotation_units % 4
     do_mirror = spec.global_flip
@@ -232,9 +427,54 @@ def _plot_scatter_sensor(
     do_board_ch: bool = False,
     center_fontsize: int = 14,
     coordinates: str = "local",
-):
-    """Plot arbitrary sensor layout by drawing each pixel as rectangle with borders
-    and annotating each with board channel."""
+) -> None:
+    """
+    Render an arbitrary-layout sensor hitmap using rectangular patches.
+
+    Each sensor channel is represented by a rectangle of the specified
+    width and height, colored according to its hit count and outlined
+    with a black border. Optionally, channel indices are annotated at
+    each rectangle's center.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes on which to draw the hitmap.
+    spec : SensorSpec
+        Sensor specification with
+        `geometry = ("scatter", chan2coords, pixel_width, pixel_height)`, where
+        `chan2coords` maps board channel → (x, y) center coordinates, and
+        `pixel_width`/`pixel_height` give the rectangle dimensions.
+    hits_by_chan : dict of int → int
+        Mapping from SAMPIC channel index to its hit count.
+    norm : matplotlib.colors.Normalize
+        Normalization instance for mapping hit counts to the colormap.
+    do_sampic_ch : bool, optional
+        If True, annotate each rectangle with the SAMPIC channel index.
+    do_board_ch : bool, optional
+        If True, annotate each rectangle with the board channel index.
+    center_fontsize : int, optional
+        Font size for annotations placed at each rectangle's center
+        (default: 14).
+    coordinates : {'local', 'global'}, optional, not implemented
+        Coordinate system for rectangle placement and annotation:
+        - 'local': use the raw (x, y) from `chan2coords`.
+        - 'global': apply `spec.global_rotation_units` and `spec.global_flip`
+          to convert to the global frame.
+
+    Returns
+    -------
+    None
+        Draws directly onto `ax`; no return value.
+
+    Notes
+    -----
+    - Rectangles are created via `matplotlib.patches.Rectangle`, centered
+      at (x, y) with width `pixel_width` and height `pixel_height`.
+    - Colors are set by `cmap(norm(hit_count))`.
+    - Black borders outline each rectangle uniformly.
+    - Annotations (if any) are centered within each rectangle.
+    """
     _, chan2coords, pixel_width, pixel_height = spec.geometry
     xs, ys = [], []
     for samp_ch, sens_ch in spec.sampic_map.items():
@@ -281,23 +521,54 @@ def plot_hitmap(
     coordinates: str = "local",
 ) -> plt.Figure:
     """
-    Draw a 2D hitmap for each sensor in `specs`, arranged in a grid,
-    using a shared color scale (linear or log), and equal aspect.
+    Draw a grid of sensor hitmaps with a shared color scale.
 
-    Args:
-        summary_df: DataFrame with columns "Channel" and "Hits".
-        specs:      List of SensorSpec, one per subplot.
-        layout:     (nrows, ncols) grid layout.
-        figsize:    Figure size in inches.
-        cmap:       Default colormap name.
-        log_z:      If True, apply logarithmic normalization on z-axis.
-        title:      Optional overall figure title.
-        do_sampic_ch: If True, draw the sampic channel at the center of the relevant pixels
-        do_board_ch:  If True, draw the board channel at the center of the relevant pixels
-        coordinates: The coordinate system to use for drawing the sensors, if local, then the local sensor coordinates are used, if global then a donwstream (looking down the beam) coordinate system is used.
+    Each sensor's hit counts are rendered according to its geometry
+    (grid, grouped, or scatter) in a subplot arranged by `layout`.  All
+    subplots share the same color normalization (linear or logarithmic),
+    and have equal aspect ratio to preserve pixel shapes.
 
-    Returns:
-        Matplotlib Figure with the hitmaps.
+    Parameters
+    ----------
+    summary_df : pandas.DataFrame
+        DataFrame with columns `"Channel"` (int) and `"Hits"` (int).
+    specs : sequence of SensorSpec
+        Specifications for each sensor to plot (one subplot per spec).
+    layout : tuple of int
+        Subplot grid dimensions as (nrows, ncols).
+    figsize : tuple of float, optional
+        Figure size in inches as (width, height) (default: (8, 6)).
+    cmap : str, optional
+        Matplotlib colormap name to use for all sensors (default: "viridis").
+    log_z : bool, optional
+        If True, apply logarithmic normalization on the color (z) axis
+        (default: False for linear scale).
+    title : str or None, optional
+        Overall figure title; if None, no supertitle is drawn (default: None).
+    do_sampic_ch : bool, optional
+        If True, annotate each pixel/group with its SAMPIC channel index
+        (default: False).
+    do_board_ch : bool, optional
+        If True, annotate each pixel/group with its board channel index
+        (default: False).
+    center_fontsize : int, optional
+        Font size for center annotations (default: 14).
+    coordinates : {'local', 'global'}, optional
+        Coordinate system for rendering:
+        - 'local': use sensor's native coordinates.
+        - 'global': apply `global_rotation_units` and `global_flip` from each spec
+          to map to a common global frame (default: 'local').
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The Figure object containing the arranged hitmap subplots.
+
+    Notes
+    -----
+    - Uses `mplhep.style.CMS` for CMS-style formatting.
+    - A single colorbar is added to the first subplot, reflecting all panels.
+    - Subplot aspect is set to 'equal' so that pixels are not distorted.
     """
     hits_by_chan = dict(zip(summary_df["Channel"], summary_df["Hits"]))
     all_vals = np.array(list(hits_by_chan.values()), dtype=float)

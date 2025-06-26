@@ -38,20 +38,36 @@ from matplotlib.ticker import FormatStrFormatter
 
 def get_channel_hits(file_path: Path, batch_size: int = 100_000, root_tree: str = "sampic_hits") -> pd.DataFrame:
     """
-    Summarize hit counts per channel for a large Feather, Parquet, or ROOT file
-    produced by the Sampic decoder.
+    Compute per-channel hit counts by streaming only the 'Channel' column.
 
-    Reads only the 'Channel' column in fixed-size batches to limit memory use.
+    Supports Feather, Parquet, or ROOT (.root) files written by the Sampic decoder.
+    Reads data in batches (to bound memory use) and tallies the number of rows
+    (hits) observed on each channel.
 
-    Args:
-        file_path: Path to the input .feather or .parquet file.
-        batch_size: Number of rows to read per iteration.
+    Parameters
+    ----------
+    file_path : pathlib.Path
+        Path to the input data file.  Must have suffix `.feather`, `.parquet`, or `.root`.
+    batch_size : int, optional
+        Number of entries to read per iteration (default: 100000).
+    root_tree : str, optional
+        Name of the TTree inside the ROOT file to read (only used if `file_path` is `.root`;
+        default: `"sampic_hits"`).
 
-    Returns:
-        A DataFrame with columns:
-          - “Channel”: the channel ID (int)
-          - “Hits”:    total count of rows for that channel
-        Sorted by increasing Channel.
+    Returns
+    -------
+    pandas.DataFrame
+        A DataFrame with two columns:
+
+        - `Channel` (int): channel identifier
+        - `Hits`    (int): total number of hits on that channel
+
+        Rows are sorted by increasing `Channel`.
+
+    Raises
+    ------
+    ValueError
+        If the file suffix is not one of `.feather`, `.parquet`, or `.root`.
     """
     counts = Counter()
     suffix = file_path.suffix.lower()
@@ -112,24 +128,54 @@ def plot_channel_hits(
     is_data: bool = True,
     color="C0",
     title: str | None = None,
-):
+) -> plt.Figure:
     """
-    Plot a histogram of hit counts per channel in CMS style.
+    Draw a CMS-style bar histogram of hit counts per channel.
 
-    Args:
-        df (pd.DataFrame): Summary DataFrame with columns "Channel" and "Hits".
-        first_channel (int): Lowest channel index to show.
-        last_channel (int): Highest channel index to show.
-        cms_label (str): The CMS label to place near the CMS text.
-        log_y (bool): If True, use a logarithmic y-axis.
-        figsize (tuple): Figure size in inches as (width, height).
-        rlabel (str): Text to display in the top-right corner (e.g., collision energy).
-        is_data (bool): If True, the plot is labelled as data, if False the plot is labelled as simulation.
-        color: Matplotlib color spec for the bars.
-        title (str or None): Overall plot title, or None for no title.
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Summary table with two columns:
+        - `Channel` (int): channel indices
+        - `Hits`    (int): hit counts per channel
+    first_channel : int
+        Lowest channel index to include on the x-axis.
+    last_channel : int
+        Highest channel index to include on the x-axis.
+    cms_label : str, optional
+        Text label for the CMS experiment (default: "PPS").
+    log_y : bool, optional
+        If True, use a logarithmic y-axis (default: False).
+    figsize : tuple of float, optional
+        Figure size in inches as (width, height) (default: (6, 4)).
+    rlabel : str, optional
+        Right-hand text label, typically collision energy (default: "(13 TeV)").
+    is_data : bool, optional
+        If True, annotate the plot as “Data”; if False, annotate as “Simulation”
+        (default: True).
+    color : any, optional
+        Matplotlib color spec for the bars (default: "C0").
+    title : str or None, optional
+        Main title displayed above the axes; if None, no title is shown.
 
-    Channels outside df["Channel"] are shown with zero hits. Suppresses
-    the scientific-offset power label on the y-axis for a cleaner look.
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The Figure object containing the histogram.
+
+    Raises
+    ------
+    ValueError
+        If `last_channel` is less than `first_channel`.
+
+    Notes
+    -----
+    - Channels missing from `df` are shown with zero hits.
+    - In linear mode, y-axis tick labels are formatted in uppercase scientific
+      notation (e.g. "4.0E6").
+    - The plot uses `mplhep.style.CMS` with `cms_label` and `rlabel` positioned
+      according to CMS styling conventions.
+    - The `is_data` flag controls the “Data” vs. “Simulation” annotation.
     """
     # Build the full channel range and corresponding hit counts (0 if missing)
     channels = list(range(first_channel, last_channel + 1))

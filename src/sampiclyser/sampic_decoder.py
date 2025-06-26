@@ -50,7 +50,52 @@ from termcolor import colored
 
 @dataclass
 class SampicHeader:
-    """Represents the parsed header of a Sampic file"""
+    """
+    Parsed header metadata from a SAMPIC file.
+
+    Attributes
+    ----------
+    software_version : str
+        Version of the SAMPIC DAQ software.
+    timestamp : datetime.datetime
+        Run start timestamp as a Python datetime.
+    sampic_mezzanine_board_version : str
+        Version identifier of the mezzanine board.
+    num_channels : int
+        Total number of channels in this run.
+    ctrl_fpga_firmware_version : str
+        Version of the control FPGA firmware.
+    front_end_fpga_firmware_version : list of str
+        Firmware versions for each front-end FPGA.
+    front_end_fpga_baseline : list of float
+        Baseline values for each front-end FPGA, affecting all associated ADC channels.
+    sampling_frequency : str
+        System data acquisition sampling frequency specification.
+    enabled_channels_mask : int
+        Bitmask indicating which channels were enabled.
+    reduced_data_type : bool
+        Whether reduced-data format was used.
+    without_waveform : bool
+        Whether waveform data were omitted.
+    tdc_like_files : bool
+        Whether files are in TDC-like format.
+    hit_number_format : str
+        Format string for hit numbering.
+    unix_time_format : str
+        Format string for Unix timestamps.
+    data_format : str
+        Format string for data values.
+    trigger_position_format : str
+        Format string for trigger-position values.
+    data_samples_format : str
+        Format string for the data-sample values.
+    inl_correction : bool
+        Whether INL correction was applied.
+    adc_correction : bool
+        Whether ADC correction was applied.
+    extra : dict of str → str
+        Any unrecognized header fields (key/value both decoded as ASCII).
+    """
 
     software_version: str = ""
     timestamp: datetime | None = field(default=None, compare=False)
@@ -75,6 +120,29 @@ class SampicHeader:
 
 
 class SAMPIC_Run_Decoder:
+    """
+    Decode and process a complete SAMPIC run.
+
+    Provides a one-pass, memory-efficient workflow for:
+      1. Reading raw SAMPIC binary files from a run directory.
+      2. Extracting and decoding header metadata.
+      3. Streaming hit records in fixed-size chunks.
+      4. Writing decoded hits and metadata to Feather, Parquet, or ROOT formats.
+
+    The class preserves metadata both as raw bytes (for Arrow/Parquet) and
+    as native Python types (for ROOT), and supports arbitrarily large files
+    without loading everything into memory.
+
+    Attributes
+    ----------
+    run_base_path : pathlib.Path
+        Path to the directory containing all binary files for one run.
+    run_header : SampicHeader
+        Parsed header metadata for the current file being processed.
+    run_files : list[pathlib.Path]
+        List of all SAMPIC binary files in `run_base_path`, in sort order.
+    """
+
     front_end_fpga_re = re.compile(r"^FRONT-END FPGA INDEX: (\d+) FIRMWARE VERSION (.+) BASELINE VALUE: ([\d\.]+)")
     timestamp_re = re.compile(r"^UnixTime = (.+) date = (.+) time = (.+ms)")
 
@@ -82,6 +150,19 @@ class SAMPIC_Run_Decoder:
         self,
         run_dir_path: Path,
     ):
+        """
+        Initialize a SAMPIC run decoder.
+
+        Parameters
+        ----------
+        run_dir_path : pathlib.Path
+            Directory containing the SAMPIC binary files for a single run.
+
+        Raises
+        ------
+        FileNotFoundError
+            If `run_dir_path` does not exist or is not a directory.
+        """
         self.run_base_path = run_dir_path
         self.run_files = natsorted(list(self.run_base_path.glob("*.bin*")))
 
@@ -94,19 +175,41 @@ class SAMPIC_Run_Decoder:
         debug: bool = False,
     ) -> Generator[Tuple[bytes, Generator[bytes, None, None]], None, None]:
         """
-        Context manager that opens `file_path`, mmaps it, extracts the header up to
-        the last '=' before the first 0x00 (plus extra_header_bytes), and then
-        yields (header_bytes, body_generator). Cleans up file and mmap on exit.
+        Memory-map a SAMPIC file, extract its header, and stream the remainder in chunks.
 
-        The function also sets a class member, current_filesize holding the size of the current file
+        This context manager opens `file_path` in read-only mode, mmaps the entire
+        file, and locates the header boundary as the last '=' byte before the first
+        `0x00`.  It returns the header (including `extra_header_bytes`) and a
+        generator yielding the file body in `chunk_size`-byte blocks.  On exit,
+        both the file and the mmap are cleanly closed.
 
-        Args:
-            file_path: Path to the binary file.
-            extra_header_bytes:   Number of bytes *after* the last header byte to include in the header.
-            chunk_size: How many bytes each body‐generator chunk should be.
+        During this process, `self.current_filesize` is set to the size of the file.
 
-        Returns:
-            (header_bytes, body_generator)
+        Parameters
+        ----------
+        file_path : pathlib.Path
+            Path to the binary SAMPIC file to read.
+        extra_header_bytes : int
+            Number of bytes to include *after* the header delimiter (`=`) in the
+            returned header.
+        chunk_size : int, optional
+            Size of each chunk (in bytes) produced by the body generator.
+            Default is 64 KiB.
+        debug : bool, optional
+            If True, print debugging information.  Default is False.
+
+        Yields
+        ------
+        header_bytes : bytes
+            The raw header bytes, from the file start up through the computed end.
+        body_gen : generator of bytes
+            Generator yielding successive `chunk_size`-byte slices of the file body.
+
+        Raises
+        ------
+        ValueError
+            If the header delimiter cannot be located (i.e. no '=' before the
+            first 0x00), indicating a malformed file.
         """
         f = file_path.open('rb')
 
@@ -155,8 +258,35 @@ class SAMPIC_Run_Decoder:
         keep_unparsed: bool = True,
     ) -> None:
         """
-        Inspect a single 'field' string and assign to the right dataclass field.
-        Unrecognized keys go into header.extra.
+        Parse a single header field string and populate the corresponding attribute.
+
+        This helper inspects a raw field fragment (text between “===” delimiters),
+        extracts the key and value(s), converts them to the appropriate type, and
+        assigns them on the supplied `SampicHeader` instance.  If the key is not
+        one of the recognized header attributes and `keep_unparsed` is True, the
+        raw field text is stored in `header.extra`.
+
+        Parameters
+        ----------
+        field : str
+            Raw header fragment, e.g. "param1: value1 part2 = 42".
+        header : SampicHeader
+            The dataclass instance to be populated in-place.
+        keep_unparsed : bool, optional
+            If True (default), any unrecognized field is appended to
+            `header.extra` under its raw key; if False, unrecognized
+            fields are ignored.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        ValueError
+            If the field text cannot be split into a key and a value,
+            or if a known key's value fails conversion (e.g. non-numeric
+            text for an integer field).
         """
         if "==" in field:
             key = None
@@ -292,18 +422,39 @@ class SAMPIC_Run_Decoder:
         keep_unparsed: bool = True,
     ) -> SampicHeader:
         """
-        Parse the header section (bytes) into a SampicHeader dataclass.
+        Parse raw header bytes into a SampicHeader instance.
 
-        Header format:
-          - Multiple lines.
-          - On each line:
-            * Starts and ends with "===".
-            * Contains one or more fields separated by "===".
-            * Field formats vary (e.g. "param: value", "param value", or
-              composite "part1 = x part2 = y", etc.)
+        The header consists of one or more lines; each line starts and ends
+        with "===" and contains fields separated by "===".  Field syntax may
+        vary (e.g. "key: value", "key value", or composite "part1 = x part2 = y").
 
-        Returns:
-            A SampicHeader dataclass.
+        Parameters
+        ----------
+        header_bytes : bytes
+            Raw bytes of the header section, from file start up to the header end
+            (inclusive of delimiters and any extra bytes).
+        keep_unparsed : bool, optional
+            If True (default), any fields that are not recognized are stored in
+            the `extra` dict of the returned SampicHeader; if False, they are discarded.
+
+        Returns
+        -------
+        SampicHeader
+            A dataclass containing all parsed header values and optionally any
+            unrecognized fields in its `extra` attribute.
+
+        Raises
+        ------
+        ValueError
+            If the header_bytes cannot be decoded into valid text, or if required
+            header fields are missing or malformed.
+
+        Notes
+        -----
+        This method:
+          1. Splits `header_bytes` on lines beginning/ending with "===".
+          2. For each field fragment, calls `_parse_header_field`.
+          3. Collects any unparsed text in `SampicHeader.extra`.
         """
         # Convert to text
         text = header_bytes.decode('utf-8', errors='replace')
@@ -327,15 +478,46 @@ class SAMPIC_Run_Decoder:
         limit_hits: int = 0,
         extra_header_bytes: int = 1,
         chunk_size: int = 64 * 1024,
-    ):
+    ) -> Generator[Dict[str, Any], None, None]:
         """
-        Decode binary data records from the run.
+        Stream and decode hit records from all files in the run.
 
-        Args:
-            limit_hits:   stop after yielding this many records.
+        This generator method opens each SAMPIC binary file in turn, extracts
+        its header (via `open_sampic_file_in_chunks_and_get_header`), checks
+        for header consistency across files, then streams the body in fixed-size
+        chunks, parsing out complete hit records until either the file ends or
+        `limit_hits` is reached.
 
-        Yields:
-            A dict (or dataclass) per hit record, mapping field names to values.
+        Parameters
+        ----------
+        limit_hits : int, optional
+            Maximum number of hit records to yield across all files.
+            A value of 0 (default) means no limit (process all hits).
+        extra_header_bytes : int, optional
+            Number of bytes to include _after_ the header delimiter when
+            extracting the header (default is 1 to include the newline).
+        chunk_size : int, optional
+            Size in bytes of each data chunk read from the body (default is
+            64 KiB). Larger chunks may be more efficient but use more memory.
+
+        Yields
+        ------
+        record : dict
+            A mapping from field names (str) to parsed values (int, float,
+            bool, list, etc.) for each hit record.
+
+        Raises
+        ------
+        ValueError
+            If header parsing fails or a file's header does not match the
+            previously parsed header (mismatched run files).
+
+        Notes
+        -----
+        - Uses a rolling buffer to accumulate bytes from the stream until a
+          full record can be parsed by `try_parse_record`.
+        - After parsing each record, advances the buffer and continues until
+          all records are yielded or `limit_hits` is reached.
         """
         mismatched_header_errors = []
 
@@ -520,17 +702,41 @@ class SAMPIC_Run_Decoder:
 
         return
 
-    def prepare_header_metadata(self):
-        retVal = {
+    def prepare_header_metadata(self) -> Dict[bytes, bytes]:
+        """
+        Pack run-header attributes into raw byte metadata for columnar files.
+
+        Generates a mapping of metadata keys to byte-encoded values suitable
+        for Arrow/Parquet file schemas, preserving binary precision and type.
+
+        Returns
+        -------
+        metadata : dict of bytes → bytes
+            Byte-to-byte mapping where:
+
+            - Text fields (e.g. software_version) are ASCII-encoded.
+            - `timestamp` is a little-endian 8-byte float (`struct.pack('<d', ...)`).
+            - `num_channels` and `enabled_channels_mask` are little-endian
+              4-byte unsigned ints (`struct.pack('<I', ...)`).
+            - Boolean flags (`reduced_data_type`, `without_waveform`, etc.)
+              are stored as a single byte: `b'\x00'` for False, `b'\x01'` for True.
+
+        Notes
+        -----
+        Keys are raw byte strings (e.g. `b'software_version'`), matching the
+        Arrow metadata API expectations. This preserves full fidelity for
+        programmatic reloading via `decode_byte_metadata`.
+        """
+        retVal: Dict[bytes, bytes] = {
             b'software_version': self.run_header.software_version.encode('ascii'),
             b'timestamp': struct.pack('<d', self.run_header.timestamp.timestamp()),
             b'sampic_mezzanine_board_version': self.run_header.sampic_mezzanine_board_version.encode('ascii'),
-            b'num_channels': struct.pack("<I", self.run_header.num_channels),
+            b'num_channels': struct.pack('<I', self.run_header.num_channels),
             b'ctrl_fpga_firmware_version': self.run_header.ctrl_fpga_firmware_version.encode('ascii'),
             # front_end_fpga_firmware_version: List[str] = field(default_factory=list)
             # front_end_fpga_baseline: List[float] = field(default_factory=list)
             b'sampling_frequency': self.run_header.sampling_frequency.encode('ascii'),
-            b'enabled_channels_mask': struct.pack("<I", self.run_header.enabled_channels_mask),
+            b'enabled_channels_mask': struct.pack('<I', self.run_header.enabled_channels_mask),
             b'reduced_data_type': b'\x01' if self.run_header.reduced_data_type else b'\x00',
             b'without_waveform': b'\x01' if self.run_header.without_waveform else b'\x00',
             b'tdc_like_files': b'\x01' if self.run_header.tdc_like_files else b'\x00',
@@ -545,8 +751,42 @@ class SAMPIC_Run_Decoder:
 
         return retVal
 
-    def prepare_root_header_metadata(self):
-        retVal = {
+    def prepare_root_header_metadata(self) -> Dict[str, object]:
+        """
+        Build a Python-native metadata dict for ROOT TTree output.
+
+        Collects all run-header fields into native Python types so they can be
+        written directly as branches in a ROOT metadata TTree.
+
+        Returns
+        -------
+        metadata : dict of str → object
+            Dictionary mapping metadata keys to Python values, including:
+
+            - `software_version` : str
+            - `timestamp` : datetime.datetime
+            - `sampic_mezzanine_board_version` : str
+            - `num_channels` : int
+            - `ctrl_fpga_firmware_version` : str
+            - `sampling_frequency` : str
+            - `enabled_channels_mask` : int
+            - `reduced_data_type` : bool
+            - `without_waveform` : bool
+            - `tdc_like_files` : bool
+            - `hit_number_format` : str
+            - `unix_time_format` : str
+            - `data_format` : str
+            - `trigger_position_format` : str
+            - `data_samples_format` : str
+            - `inl_correction` : bool
+            - `adc_correction` : bool
+
+        Notes
+        -----
+        All values are in their natural Python form (no byte-packing), ready
+        for conversion to Awkward or NumPy arrays when writing via uproot.
+        """
+        retVal: Dict[str, object] = {
             'software_version': self.run_header.software_version,
             'timestamp': self.run_header.timestamp,
             'sampic_mezzanine_board_version': self.run_header.sampic_mezzanine_board_version,
@@ -570,19 +810,44 @@ class SAMPIC_Run_Decoder:
 
         return retVal
 
-    def write_root_header(self, froot: uproot.WritableDirectory):
+    def write_root_header(self, froot: uproot.WritableDirectory) -> None:
+        """
+        Embed run-header metadata into a ROOT file as a metadata TTree.
+
+        Converts the dict returned by `prepare_root_header_metadata` into
+        Awkward arrays of strings and writes them as two branches
+        ('key' and 'value') in a TTree named 'metadata'. Existing
+        metadata trees of the same name are overwritten.
+
+        Parameters
+        ----------
+        froot : uproot.WritableDirectory
+            An open ROOT file handle (from `uproot.recreate` or `uproot.update`)
+            into which the metadata TTree will be written.
+
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        - Keys and values are both stored as variable-length strings using
+          Awkward Arrays (`ak.from_iter`).
+        - The resulting TTree will have two string branches:
+            - `key`   : metadata field names
+            - `value` : metadata field values (all converted to str)
+        - If a 'metadata' TTree already exists, it is replaced.
+        """
         metadata = self.prepare_root_header_metadata()
 
+        # Convert to Awkward Arrays of strings for variable-length support
         keys = ak.from_iter(list(metadata.keys()), highlevel=True)
         vals = ak.from_iter([str(v) for v in metadata.values()], highlevel=True)
 
-        # Encode everything as fixed‐length byte strings
-        # keys = np.array(list(metadata.keys()), dtype=f"S{max(len(k) for k in metadata)}")
-        # vals = np.array([str(v) for v in metadata.values()], dtype=f"S{max(len(str(v)) for v in metadata.values())}")
-
-        froot["metadata"] = {
-            "key": keys,
-            "value": vals,
+        # Assign the new metadata TTree
+        froot['metadata'] = {
+            'key': keys,
+            'value': vals,
         }
 
     def decode_data(  # noqa: max-complexity=24
@@ -595,22 +860,52 @@ class SAMPIC_Run_Decoder:
         extra_header_bytes: int = 1,
         chunk_size: int = 64 * 1024,
         batch_size: int = 100_000,
-    ) -> pd.DataFrame:
+    ) -> None:
         """
-        Consumes parsed hit-record dicts, builds a pandas DataFrame,
-        and writes it out to Feather, Parquet, and/or a ROOT TTree.
+        Decode hit records from SAMPIC run files and export to Feather, Parquet, and/or ROOT.
 
-        Args:
-            limit_hits:   Whether to limit the number of parsed hits to this number (default: 0, no limit)
-            feather_path: Path to save as .feather (fast, uncompressed).
-            parquet_path: Path to save as .parquet (columnar, compressed).
-            root_path:    Path to save as .root file.
-            root_tree:    Name of the TTree inside the ROOT file.
-            extra_header_bytes: How many extra bytes to add to the header after the end of automatic detection, the default of 1 should always work, since it is adding 1 for the newline character at the end of the header
-            chunk_size:   Size of the chunks into which the data file is being split when loaded into memory
-            batch_size:   How many hit records to process in one go
-        Returns:
-            The assembled pandas DataFrame.
+        This method streams parsed hit-record dictionaries (via
+        `parse_hit_records`), accumulates them in batches to build a
+        pandas DataFrame, and then writes each batch to the specified
+        output formats.  It never holds all records in memory at once.
+
+        Parameters
+        ----------
+        limit_hits : int, optional
+            Maximum number of hit records to process across all run files.
+            A value of 0 (default) means “no limit” (process all hits).
+        feather_path : pathlib.Path or None, optional
+            If not None, path to write the DataFrame in Feather format.
+        parquet_path : pathlib.Path or None, optional
+            If not None, path to write the DataFrame in Parquet format.
+        root_path : pathlib.Path or None, optional
+            If not None, path to write the DataFrame to a ROOT file.
+        root_tree : str, optional
+            Name of the TTree inside the ROOT file (default: `"sampic_hits"`).
+        extra_header_bytes : int, optional
+            Number of bytes to include *after* the detected header boundary
+            (default: 1 to capture the trailing newline).
+        chunk_size : int, optional
+            Byte size for each memory-mapped file read chunk
+            (default: 64 KiB).
+        batch_size : int, optional
+            Number of records to collect before flushing to output
+            (default: 100 000).
+
+        Raises
+        ------
+        ValueError
+            If header parsing fails, or if writing to any format encounters
+            missing or mismatched branch/column schemas.
+
+        Notes
+        -----
+        - Feather and Parquet outputs preserve exact column dtypes by
+          casting before writing.
+        - ROOT output is written via `uproot` using dict-of-NumPy-arrays
+          (or `mktree` + `extend`) to ensure correct branch types.
+        - Each batch is written immediately; the final partial batch is
+          flushed at the end.
         """
         buffer: list[dict] = []
         first = True
