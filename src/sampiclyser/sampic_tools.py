@@ -28,7 +28,9 @@ import matplotlib.pyplot as plt
 import mplhep as hep
 import numpy as np
 import pandas as pd
-import pyarrow.ipc as ipc
+import pyarrow.dataset as ds
+
+# import pyarrow.ipc as ipc
 import pyarrow.parquet as pq
 import uproot
 from matplotlib.ticker import FormatStrFormatter
@@ -65,13 +67,22 @@ def get_channel_hits(file_path: Path, batch_size: int = 100_000, root_tree: str 
 
     elif suffix == ".feather":
         # Feather (Arrow IPC): open and iterate record batches
-        with open(file_path, "rb") as f:
-            reader = ipc.open_file(f)
-            for batch in reader.iter_batches(batch_size=batch_size):
-                arr = batch.column("Channel").to_numpy()
-                uniques, cnts = np.unique(arr, return_counts=True)
-                for ch, cnt in zip(uniques, cnts):
-                    counts[int(ch)] += int(cnt)
+        dataset = ds.dataset(str(file_path), format="feather")
+        scanner = dataset.scanner(batch_size=batch_size, columns=["Channel"])
+        for batch in scanner.to_batches():
+            arr = batch["Channel"].to_numpy()
+            uniques, cnts = np.unique(arr, return_counts=True)
+            for ch, cnt in zip(uniques, cnts):
+                counts[int(ch)] += int(cnt)
+
+        # with open(file_path, "rb") as f:
+        #     reader = ipc.open_file(f)
+        #     for i in range(reader.num_record_batches):
+        #         batch = reader.get_batch(i)
+        #         arr = batch.column("Channel").to_numpy()
+        #         uniques, cnts = np.unique(arr, return_counts=True)
+        #         for ch, cnt in zip(uniques, cnts):
+        #             counts[int(ch)] += int(cnt)
 
     elif suffix == ".root":
         # ROOT: use uproot.iterate to stream the 'Channel' branch
@@ -109,6 +120,7 @@ def plot_channel_hits(
         df (pd.DataFrame): Summary DataFrame with columns "Channel" and "Hits".
         first_channel (int): Lowest channel index to show.
         last_channel (int): Highest channel index to show.
+        cms_label (str): The CMS label to place near the CMS text.
         log_y (bool): If True, use a logarithmic y-axis.
         figsize (tuple): Figure size in inches as (width, height).
         rlabel (str): Text to display in the top-right corner (e.g., collision energy).
@@ -152,4 +164,6 @@ def plot_channel_hits(
     ax.set_xticks(channels)
 
     plt.tight_layout()
-    plt.show()
+    # plt.show()
+
+    return fig

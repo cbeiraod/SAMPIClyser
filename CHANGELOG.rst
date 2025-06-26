@@ -4,6 +4,8 @@ Changelog
 Current (2025-06-26)
 --------------------
 
+* Fixed get_channel_hits batch processing of feather files
+
 
 0.0.4 (2024-06-26)
 ------------------
