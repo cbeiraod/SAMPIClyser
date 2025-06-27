@@ -4,6 +4,10 @@ Changelog
 Current (2025-06-27)
 --------------------
 
+
+0.0.6 (2024-06-27)
+------------------
+
 * Added function for plotting hit rate over time
 
 
