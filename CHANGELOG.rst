@@ -1,8 +1,12 @@
 Changelog
 =========
 
-Current (2025-06-26)
+Current (2025-06-27)
 --------------------
+
+
+0.0.5 (2024-06-27)
+------------------
 
 * Fixed get_channel_hits batch processing of feather files
 * Added docstrings to all functions/methods
