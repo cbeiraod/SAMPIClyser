@@ -20,22 +20,30 @@
 #    misrepresented as being the original software.
 # 3. This notice may not be removed or altered from any source distribution.
 #############################################################################
-"""The Entry Points module
+"""
+Library-level entry points for command-line and programmatic access.
 
-This is a utility module holds all the CLI entry points
-
+This module defines top-level functions that can be used as console_scripts
+entry points or imported directly into other Python code.
 """
 
-import argparse
+import click
 
+import sampiclyser.sampic_convert_script
 from sampiclyser import __version__
 
 
-def version(args=None):
+@click.group()
+def cli() -> None:
+    """SAMPIClyser command-line interface"""
+    pass
+
+
+cli.add_command(sampiclyser.sampic_convert_script.decode)
+
+
+@cli.command()
+def version():
     """This is the entry function for the command line interface to print out the version"""
-    parser = argparse.ArgumentParser(description='Print the SAMPIClyser version')
-    # parser.add_argument('names', metavar='NAME', nargs=argparse.ZERO_OR_MORE,
-    #                 help="A name of something.")
-    args = parser.parse_args(args=args)
 
     print(f"The SAMPIClyser version is: {__version__}")

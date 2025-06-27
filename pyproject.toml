@@ -31,6 +31,7 @@ dependencies = [
     "uproot",
     "mplhep",
     "matplotlib",
+    "click",
 ]
 
 [project.urls]
@@ -39,8 +40,9 @@ dependencies = [
 "Bug Tracker" = "https://github.com/cbeiraod/SAMPIClyser/issues"
 
 [project.scripts]
+sampiclyser = "sampiclyser.entry_points:cli"
 sampiclyser-version = "sampiclyser.entry_points:version"
-sampic-convert = "sampiclyser.sampic_convert_script:main"
+sampic-convert = "sampiclyser.sampic_convert_script:decode"
 
 [tool.pytest.ini_options]
 addopts = [

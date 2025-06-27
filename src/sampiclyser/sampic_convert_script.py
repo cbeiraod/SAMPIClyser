@@ -20,142 +20,151 @@
 #    misrepresented as being the original software.
 # 3. This notice may not be removed or altered from any source distribution.
 #############################################################################
-"""The command line script for converting binary data with SAMPIClyser
+"""
+SAMPIC conversion command-line interface.
+
+This script processes raw SAMPIC binary data in a specified directory and
+converts it into tabular formats: Parquet, Feather, and/or ROOT.  It streams
+large files efficiently, supports hit-count limiting, and reports debugging
+information when requested.
+
+Usage example
+-------------
+python sampic_convert_script.py \
+    --inputDir /path/to/binaries \
+    --parquetFile out.parquet \
+    --limitHits 100000
 """
 
-import argparse
-import pprint
 from pathlib import Path
+
+import click
 
 import sampiclyser
 
 
-def main(args=None):
-    """This is the entry function for the command line interface to print out the version"""
-    parser = argparse.ArgumentParser(
-        description='Process the SAMPIC binary data and store into ROOT/Feather/Parquet format. Parquet format is recommended.'
-    )
+@click.command()
+@click.option(
+    '--input-dir',
+    '-i',
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    required=True,
+    help='Directory containing SAMPIC binary run files',
+)
+@click.option('--limit-hits', '-l', type=int, default=0, help='Maximum number of hits to process (0 = no limit)')
+@click.option('--parquet', '-p', 'parquet_path', type=click.Path(path_type=Path), help='Output Parquet file')
+@click.option('--feather', '-f', 'feather_path', type=click.Path(path_type=Path), help='Output Feather file')
+@click.option('--root', '-r', 'root_path', type=click.Path(path_type=Path), help='Output ROOT file')
+@click.option('--debug', '-d', is_flag=True, help='Enable debug logging')
+@click.option(
+    '--extra-header-bytes',
+    'extra_header_bytes',
+    type=int,
+    default=1,
+    help='Set the number of bytes to skip at the end of the header, by default only skip 1, to skip the newline character but in pathological cases it may need to be tuned',
+)
+@click.option(
+    '--chunk-size',
+    'chunk_size',
+    type=int,
+    default=64,
+    help='Set how many bytes to load at a time when streaming data from the binary file, in units of 1kb. Default: 64. You should not need to tune this parameter unless in a memory constrained system or searching for ultimate performance.',
+)
+def decode(  # noqa: max-complexity=20
+    input_dir: Path,
+    limit_hits: int,
+    parquet_path: Path | None,
+    feather_path: Path | None,
+    root_path: Path | None,
+    debug: bool,
+    extra_header_bytes: int,
+    chunk_size: int,
+):
+    """
+    Decode a raw SAMPIC run into Parquet, Feather, and/or ROOT formats.
+    """
 
-    parser.add_argument(
-        '-i',
-        '--inputDir',
-        metavar='DIR',
-        help="The input directory with the binary data",
-        required=True,
-    )
-    parser.add_argument(
-        '--limitHits',
-        metavar='INT',
-        help="Limit data processing to this amount of hits. If not set, the default behaviour is to process the whole file",
-    )
-    parser.add_argument(
-        '-p',
-        '--parquetFile',
-        metavar='File',
-        help="The file to store the parquet output, if not set, there will be no parquet output",
-    )
-    parser.add_argument(
-        '-f',
-        '--featherFile',
-        metavar='File',
-        help="The file to store the feather output, if not set, there will be no feather output",
-    )
-    parser.add_argument(
-        '-r',
-        '--rootFile',
-        metavar='File',
-        help="The file to store the root output, if not set, there will be no ROOT output",
-    )
-    parser.add_argument(
-        '-d',
-        '--debug',
-        help="If set, debug output will be enabled",
-        action='store_true',
-    )
-    parser.add_argument(
-        '--extraHeaderBytes',
-        metavar='INT',
-        help="Set the number of bytes to skip at the end of the header, by default only skip 1, to skip the newline character but in pathological cases it may need to be tuned",
-        default='1',
-    )
-    parser.add_argument(
-        '--chunkSize',
-        metavar='INT',
-        help="Set how many bytes to load at a time when streaming data from the binary file, in units of 1kb. Default: 64. You should not need to tune this parameter unless in a memory constrained system or searching for ultimate performance.",
-        default='64',
-    )
-
-    args = parser.parse_args(args=args)
-
-    inputDirectory = Path(args.inputDir)
-    if not inputDirectory.exists() or not inputDirectory.is_dir():
-        raise RuntimeError("The input directory does not exist or is not a directory, please fix")
-
-    limitHits = 0
-    if args.limitHits is not None:
-        limitHits = int(args.limitHits, base=0)
-
-    extraHeaderBytes = int(args.extraHeaderBytes, base=0)
-    chunkSize = int(args.chunkSize, base=0) * 1024
-
-    parquetFilePath = None
-    if args.parquetFile is not None:
-        parquetFilePath = Path(args.parquetFile)
-        if parquetFilePath.suffix != ".parquet":
+    if parquet_path is not None:
+        if parquet_path.suffix not in ('.parquet', '.pq'):
             raise RuntimeError("The specified parquet file does not have the correct suffix")
-        if parquetFilePath.exists():
+        if parquet_path.exists():
             raise RuntimeError("The specified parquet file already exists")
 
-    featherFilePath = None
-    if args.featherFile is not None:
-        featherFilePath = Path(args.featherFile)
-        if featherFilePath.suffix != ".feather":
+    if feather_path is not None:
+        if feather_path.suffix != ".feather":
             raise RuntimeError("The specified feather file does not have the correct suffix")
-        if featherFilePath.exists():
+        if feather_path.exists():
             raise RuntimeError("The specified feather file already exists")
 
-    rootFilePath = None
-    if args.rootFile is not None:
-        rootFilePath = Path(args.rootFile)
-        if rootFilePath.suffix != ".root":
+    if root_path is not None:
+        if root_path.suffix != ".root":
             raise RuntimeError("The specified root file does not have the correct suffix")
-        if rootFilePath.exists():
+        if root_path.exists():
             raise RuntimeError("The specified root file already exists")
 
-    # Now that we finished loading the command line parameters, we can start processing the data
-    decoder = sampiclyser.SAMPIC_Run_Decoder(inputDirectory)
+    if debug:
+        click.echo('Processing raw SAMPIC run directory: ', nl=False)
+        click.secho(input_dir, fg='green', bold=True)
 
-    if args.debug:
-        print()
-        print(
+        if limit_hits > 0:
+            click.echo('  - Will only process ', nl=False)
+            click.secho(f'{limit_hits}', fg='red', bold=True, nl=False)
+            click.echo(' hits')
+
+        click.echo("  - Will add ", nl=False)
+        click.secho(f'{extra_header_bytes}', fg='red', bold=True, nl=False)
+        click.echo(f' byte{"s" if extra_header_bytes != 1 else ""} to the header')
+
+        click.echo("  - Will process the data in  ", nl=False)
+        click.secho(f'{chunk_size}', fg='red', bold=True, nl=False)
+        click.echo('×1024 byte long chunks')
+
+        if parquet_path is not None:
+            click.echo('Saving parquet tabular data to ', nl=False)
+            click.secho(parquet_path, fg='green', bold=True)
+        if feather_path is not None:
+            click.echo('Saving feather tabular data to ', nl=False)
+            click.secho(feather_path, fg='green', bold=True)
+        if root_path is not None:
+            click.echo('Saving root tabular data to ', nl=False)
+            click.secho(root_path, fg='green', bold=True)
+
+    # Now that we finished loading the command line parameters, we can start processing the data
+    decoder = sampiclyser.SAMPIC_Run_Decoder(input_dir)
+
+    if debug:
+        click.echo()
+        click.echo(
             "The following binary files were found in the input and will be processed in this order. Also reporting the size of the headers for each:"
         )
-        # print(decoder.run_files)
         for file in decoder.run_files:
-            with decoder.open_sampic_file_in_chunks_and_get_header(file, extraHeaderBytes, chunk_size=chunkSize, debug=False) as (
+            with decoder.open_sampic_file_in_chunks_and_get_header(file, extra_header_bytes, chunk_size=chunk_size, debug=False) as (
                 header,
                 _,
             ):
-                print(f"{file}:\n\tHeader: {len(header)} bytes")
+                click.secho(file, fg='green')
+                click.echo('\tHeader: ', nl=False)
+                click.secho(len(header), nl=False, fg='blue')
+                click.echo(' bytes')
 
-    if args.debug:
-        print()
-        print("Processing and printing 4 hits to the terminal.")
-        for raw_hit in decoder.parse_hit_records(limit_hits=4, extra_header_bytes=extraHeaderBytes, chunk_size=chunkSize):
-            pprint.pp(raw_hit)
+    if debug:
+        click.echo()
+        click.echo("Processing and printing up to 4 hits to the terminal.")
+        for raw_hit in decoder.parse_hit_records(limit_hits=4, extra_header_bytes=extra_header_bytes, chunk_size=chunk_size):
+            click.echo(raw_hit)
 
-    if featherFilePath is None and parquetFilePath is None and rootFilePath is None:
+    if feather_path is None and parquet_path is None and root_path is None:
         print("No output files were defined, not processing any data")
     else:
         decoder.decode_data(
-            limit_hits=limitHits,
-            feather_path=featherFilePath,
-            parquet_path=parquetFilePath,
-            root_path=rootFilePath,
-            extra_header_bytes=extraHeaderBytes,
-            chunk_size=chunkSize,
+            limit_hits=limit_hits,
+            feather_path=feather_path,
+            parquet_path=parquet_path,
+            root_path=root_path,
+            extra_header_bytes=extra_header_bytes,
+            chunk_size=chunk_size,
         )
 
 
 if __name__ == "__main__":
-    main()
+    decode()
