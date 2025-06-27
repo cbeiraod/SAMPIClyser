@@ -4,6 +4,8 @@ Changelog
 Current (2025-06-27)
 --------------------
 
+* Converted command line interface to click
+
 
 0.0.6 (2024-06-27)
 ------------------
