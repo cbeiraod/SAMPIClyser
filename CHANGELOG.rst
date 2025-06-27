@@ -4,13 +4,15 @@ Changelog
 Current (2025-06-27)
 --------------------
 
+* Added function for plotting hit rate over time
+
 
 0.0.5 (2024-06-27)
 ------------------
 
 * Fixed get_channel_hits batch processing of feather files
 * Added docstrings to all functions/methods
-* Added functions for plotting hit rate over time
+* Added functions for dealing with header metadata from files
 
 
 0.0.4 (2024-06-26)
