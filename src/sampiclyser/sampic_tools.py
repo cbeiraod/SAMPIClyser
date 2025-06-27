@@ -21,6 +21,8 @@
 # 3. This notice may not be removed or altered from any source distribution.
 #############################################################################
 
+import datetime
+import struct
 from collections import Counter
 from pathlib import Path
 
@@ -28,6 +30,7 @@ import matplotlib.pyplot as plt
 import mplhep as hep
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 import pyarrow.dataset as ds
 
 # import pyarrow.ipc as ipc
@@ -213,3 +216,204 @@ def plot_channel_hits(
     # plt.show()
 
     return fig
+
+
+def decode_byte_metadata(byte_metadata: dict[bytes, bytes]) -> dict[str, object]:
+    """
+    Decode raw byte-to-byte metadata into native Python types.
+
+    Parameters
+    ----------
+    byte_metadata : dict of bytes → bytes
+        Mapping of raw metadata keys and values as read from an Arrow or Parquet file.
+        Keys and values are both byte strings.
+
+    Returns
+    -------
+    metadata : dict of str → object
+        Decoded metadata where each key is ASCII-decoded, and each value is converted
+        according to its semantic type:
+
+        - **str**:
+          - Version/info fields such as ``software_version``,
+            ``sampic_mezzanine_board_version``, ``ctrl_fpga_firmware_version``,
+            ``sampling_frequency``, ``hit_number_format``, etc.
+        - **datetime.datetime**:
+          - The ``timestamp`` field, unpacked from a little-endian float64.
+        - **int**:
+          - Numeric fields such as ``num_channels`` and ``enabled_channels_mask``,
+            unpacked from little-endian uint32.
+        - **bool**:
+          - Flag fields such as ``reduced_data_type``, ``without_waveform``,
+            ``tdc_like_files``, ``inl_correction``, and ``adc_correction``,
+            where a single zero byte means False and any other byte means True.
+
+    Raises
+    ------
+    KeyError
+        If a required metadata key is missing from the input dictionary.
+    struct.error
+        If unpacking a numeric or timestamp field fails due to incorrect byte length.
+
+    Notes
+    -----
+    - Entries whose keys decode to ``'ARROW:schema'`` or ``'pandas'`` are ignored.
+    - Any unrecognized keys will still be included in the output as their raw ASCII-decoded
+      byte sequence, with the byte value left unchanged.
+    """
+    metadata: dict[str, object] = {}
+
+    for key_bytes, data_bytes in byte_metadata.items():
+        key = key_bytes.decode('ascii')
+        # Skip Arrow internal metadata
+        if key in ['ARROW:schema', 'pandas']:
+            continue
+        # Default: store raw bytes, will be overwritten if matched below
+        value: object = data_bytes
+
+        # Text fields
+        if key in [
+            'software_version',
+            'sampic_mezzanine_board_version',
+            'ctrl_fpga_firmware_version',
+            'sampling_frequency',
+            'hit_number_format',
+            'unix_time_format',
+            'data_format',
+            'trigger_position_format',
+            'data_samples_format',
+        ]:
+            value = data_bytes.decode('ascii')
+        # Timestamp: little-endian 8-byte float
+        elif key == 'timestamp':
+            (ts,) = struct.unpack('<d', data_bytes)
+            value = datetime.datetime.fromtimestamp(ts)
+        # Unsigned int fields
+        elif key in ['num_channels', 'enabled_channels_mask']:
+            (tmp,) = struct.unpack('<I', data_bytes)
+            value = tmp
+        # Boolean flags: 0x00 => False, else True
+        elif key in ['reduced_data_type', 'without_waveform', 'tdc_like_files', 'inl_correction', 'adc_correction']:
+            value = False if data_bytes == b'\x00' else True
+
+        metadata[key] = value
+    return metadata
+
+
+def load_root_metadata(file_path: str) -> dict[str, object]:
+    """
+    Read metadata from a 'metadata' TTree in a ROOT file and decode to Python types.
+
+    Parameters
+    ----------
+    file_path : str
+        Filesystem path to the ROOT file containing a TTree named 'metadata' with
+        two branches: 'key' and 'value'.  Both branches should contain strings.
+
+    Returns
+    -------
+    metadata : dict of str → object
+        Dictionary mapping each metadata key to a Python value, converted as follows:
+
+        - **datetime.datetime**
+          If the key is `'timestamp'`, the string is parsed via
+          `datetime.datetime.fromisoformat`.
+        - **int**
+          For `'num_channels'` and `'enabled_channels_mask'`, the string is cast to `int`.
+        - **bool**
+          For flags (`'reduced_data_type'`, `'without_waveform'`,
+          `'tdc_like_files'`, `'inl_correction'`, `'adc_correction'`),
+          the string `'False'` → `False`, all other values → `True`.
+        - **str**
+          All other entries are left as Python strings.
+
+    Raises
+    ------
+    KeyError
+        If the TTree 'metadata' or the branches 'key'/'value' are not found.
+    ValueError
+        If a timestamp string cannot be parsed by `fromisoformat`, or if an
+        integer conversion fails.
+
+    Notes
+    -----
+    - This function uses `uproot.open` to read the ROOT file in read-only mode.
+    - It expects the metadata tree to have exactly two branches, `'key'` and
+      `'value'`, both containing arrays of equal length.
+    """
+    metadata: dict[str, object] = {}
+    with uproot.open(file_path) as f:
+        # Expect a TTree named 'metadata' with branches 'key' and 'value'
+        arr = f['metadata'].arrays(['key', 'value'], library='np')
+        for key_bytes, val_arr in zip(arr['key'], arr['value']):
+            key = key_bytes.decode('ascii') if isinstance(key_bytes, (bytes, bytearray)) else str(key_bytes)
+            raw = val_arr
+            # Parse types
+            if key == 'timestamp':
+                value = datetime.datetime.fromisoformat(raw)
+            elif key in ['num_channels', 'enabled_channels_mask']:
+                value = int(raw)
+            elif key in ['reduced_data_type', 'without_waveform', 'tdc_like_files', 'inl_correction', 'adc_correction']:
+                value = False if raw == 'False' else True
+            else:
+                # Default: raw may be bytes or numpy scalar
+                if isinstance(raw, bytes):
+                    value = raw.decode('ascii')
+                else:
+                    value = str(raw)
+            metadata[key] = value
+    return metadata
+
+
+def get_file_metadata(file_path: Path) -> dict[str, object]:
+    """
+    Load metadata from a SAMPIC output file, selecting the appropriate reader.
+
+    This function examines the file extension of `file_path` and invokes the
+    corresponding metadata decoder:
+
+    - **Parquet** (`.parquet`, `.pq`): uses `pyarrow.parquet` metadata and
+      `decode_byte_metadata` for byte-to-type conversion.
+    - **Feather** (`.feather`): uses `pyarrow.ipc` schema metadata and
+      `decode_byte_metadata`.
+    - **ROOT** (`.root`): uses `uproot` to read a ´metadata´ TTree via
+      `load_root_metadata`.
+
+    Parameters
+    ----------
+    file_path : pathlib.Path
+        Path to the input file whose metadata to extract.  Supported suffixes
+        are `.parquet`, `.pq`, `.feather`, and `.root`.
+
+    Returns
+    -------
+    metadata : dict of str → object
+        Dictionary of metadata fields mapped to native Python values, where
+        each value may be one of:
+
+        - **str**
+          For textual fields (software versions, format strings).
+        - **int**
+          For numeric fields (e.g. `num_channels`, masks).
+        - **bool**
+          For flag fields (`reduced_data_type`, etc.).
+        - **datetime.datetime**
+          For timestamp fields.
+
+    Raises
+    ------
+    ValueError
+        If `file_path` has an unsupported suffix or if metadata loading fails
+        for any reason.
+    """
+    suffix = file_path.suffix.lower()
+    if suffix in ('.parquet', '.pq'):
+        pqf = pq.ParquetFile(str(file_path))
+        return decode_byte_metadata(pqf.metadata.metadata or {})
+    elif suffix == '.feather':
+        ipcf = pa.ipc.open_file(str(file_path))
+        return decode_byte_metadata(ipcf.schema.metadata or {})
+    elif suffix == '.root':
+        return load_root_metadata(str(file_path))
+    else:
+        raise ValueError(f"Unsupported format: {file_path.suffix}")
