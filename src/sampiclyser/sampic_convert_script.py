@@ -70,6 +70,20 @@ import sampiclyser
     default=64,
     help='Set how many bytes to load at a time when streaming data from the binary file, in units of 1kb. Default: 64. You should not need to tune this parameter unless in a memory constrained system or searching for ultimate performance.',
 )
+@click.option(
+    '--root-tree',
+    'root_tree',
+    type=str,
+    default="sampic_hits",
+    help='The name of the root ttree under which to save the hit data. Default: sampic_hits',
+)
+@click.option(
+    '--batch-size',
+    'batch_size',
+    type=int,
+    default=100000,
+    help='Number of hits to collect before writing to disk. Default: 100 000. You should not need to tune this parameter unless in a memory constrained system or searching for ultimate performance.',
+)
 def decode(  # noqa: max-complexity=20
     input_dir: Path,
     limit_hits: int,
@@ -79,6 +93,8 @@ def decode(  # noqa: max-complexity=20
     debug: bool,
     extra_header_bytes: int,
     chunk_size: int,
+    root_tree: str,
+    batch_size: int,
 ):
     """
     Decode a raw SAMPIC run into Parquet, Feather, and/or ROOT formats.
@@ -161,8 +177,10 @@ def decode(  # noqa: max-complexity=20
             feather_path=feather_path,
             parquet_path=parquet_path,
             root_path=root_path,
+            root_tree=root_tree,
             extra_header_bytes=extra_header_bytes,
             chunk_size=chunk_size,
+            batch_size=batch_size,
         )
 
 
