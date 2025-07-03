@@ -657,6 +657,8 @@ def plot_channel_hit_rate(  # noqa: max-complexity=22
     ----------
     file_path : pathlib.Path
         Path to the input data file; supported suffixes are `.feather`, `.parquet`, `.pq`, and `.root`.
+    channel : int, optional
+        The SAMPIC channel to plot (default: 0).
     bin_size : float, optional
         Width of each time bin in seconds; values below 0.1 are rounded up to 0.1 (default: 1.0).
     batch_size : int, optional
