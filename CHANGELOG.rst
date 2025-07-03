@@ -4,6 +4,7 @@ Changelog
 Current (2025-06-27)
 --------------------
 
+* Added scipy as a dependency for signal processing
 * Added function to parse file metadata and extract the sampling frequecy
 * Added function and command line command to plot hit rate vs time for specific SAMPIC channels
 * Converted command line interface to click
