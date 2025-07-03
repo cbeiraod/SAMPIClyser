@@ -27,7 +27,8 @@ __version__ = '0.0.6'
 
 from .sampic_decoder import SAMPIC_Run_Decoder
 from .sampic_tools import get_channel_hits
+from .sampic_tools import plot_channel_hit_rate
 from .sampic_tools import plot_channel_hits
 from .sampic_tools import plot_hit_rate
 
-__all__ = ["SAMPIC_Run_Decoder", "get_channel_hits", "plot_channel_hits", "plot_hit_rate"]
+__all__ = ["SAMPIC_Run_Decoder", "get_channel_hits", "plot_channel_hits", "plot_hit_rate", "plot_channel_hit_rate"]

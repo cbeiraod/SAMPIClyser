@@ -627,3 +627,207 @@ def plot_hit_rate(  # noqa: max-complexity=22
     plt.tight_layout()
 
     return fig
+
+
+def plot_channel_hit_rate(  # noqa: max-complexity=22
+    file_path: Path,
+    channel: int = 0,
+    bin_size: float = 1.0,
+    batch_size: int = 100_000,
+    plot_hits: bool = False,
+    start_time: datetime.datetime | float | None = None,
+    end_time: datetime.datetime | float | None = None,
+    root_tree: str = "sampic_hits",
+    scale_factor: float = 1.0,
+    cms_label: str = "PPS",
+    log_y: bool = False,
+    figsize: tuple[float, float] = (6, 4),
+    rlabel: str = "(13 TeV)",
+    is_data: bool = True,
+    color="C0",
+    title: str | None = None,
+) -> plt.Figure:
+    """
+    Plot the hit rate (or raw hits) as a function of time from large data files.
+
+    Streams the “UnixTime” column in batches from a Feather, Parquet, or ROOT file,
+    bins events into fixed-width time intervals, and renders a CMS-style time series.
+
+    Parameters
+    ----------
+    file_path : pathlib.Path
+        Path to the input data file; supported suffixes are `.feather`, `.parquet`, `.pq`, and `.root`.
+    bin_size : float, optional
+        Width of each time bin in seconds; values below 0.1 are rounded up to 0.1 (default: 1.0).
+    batch_size : int, optional
+        Number of entries to read per I/O batch (default: 100000).
+    plot_hits : bool, optional
+        If True, plot the raw count per bin; otherwise plot the rate
+        (count divided by `bin_size`) (default: False).
+    start_time : datetime.datetime, float, or None, optional
+        Start of the time window for plotting, as a datetime or UNIX timestamp.
+        If None, uses the file's “start_of_run” metadata.  Aligned to the
+        nearest lower multiple of `bin_size` (default: None).
+    end_time : datetime.datetime, float, or None, optional
+        End of the time window for plotting, as a datetime or UNIX timestamp.
+        If None, determined from the data.  Aligned to the nearest upper
+        multiple of `bin_size` (default: None).
+    root_tree : str, optional
+        Name of the TTree in a ROOT file (only used if `file_path` ends in `.root`;
+        default: `"sampic_hits"`).
+    scale_factor : float, optional
+        Multiplier applied to each bin's count (e.g. to account for
+        central trigger multiplicity) before plotting (default: 1.0).
+    cms_label : str, optional
+        CMS experiment label (default: `"PPS"`).
+    log_y : bool, optional
+        If True, use a logarithmic y-axis (default: False).
+    figsize : tuple of float, optional
+        Figure size in inches as (width, height) (default: (6, 4)).
+    rlabel : str, optional
+        Additional right-hand label (e.g. collision energy) (default: `"(13 TeV)"`).
+    is_data : bool, optional
+        If True, annotate plots as “Data”; if False, annotate as “Simulation”
+        (default: True).
+    color : color spec, optional
+        Matplotlib color for the line or bars (default: `"C0"`).
+    title : str or None, optional
+        Main title for the figure; if None, no title is drawn (default: None).
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        Figure object containing the hit-rate (or hit-count) vs. time plot,
+        styled according to CMS conventions.
+
+    Raises
+    ------
+    ValueError
+        If `file_path` has an unsupported suffix.
+
+    Notes
+    -----
+    - Time bins are computed as `floor((t - t0)/bin_size)` indices,
+      then shifted back to absolute times for plotting.
+    - X-axis tick formatting uses Matplotlib's `AutoDateLocator` and
+      `AutoDateFormatter` for sensible date/time labels across variable spans.
+    """
+    # enforce minimum bin size
+    bin_size = max(bin_size, 0.1)
+
+    # fetch run‐start from metadata; override if start_time provided
+    metadata = get_file_metadata(file_path)
+    run_start = metadata.get("timestamp")
+    if isinstance(run_start, datetime.datetime):
+        run_start_ts = run_start.timestamp()
+    else:
+        run_start_ts = float(run_start)
+    # align to bin boundary
+    run_start_ts = math.floor(run_start_ts / bin_size) * bin_size
+
+    # apply user override
+    if start_time is not None:
+        st = start_time.timestamp() if isinstance(start_time, datetime.datetime) else float(start_time)
+        if st > run_start_ts:
+            run_start_ts = math.floor(st / bin_size) * bin_size
+
+    counts = Counter()
+    suffix = file_path.suffix.lower()
+
+    if suffix in (".parquet", ".pq"):
+        pqf = pq.ParquetFile(str(file_path))
+        for batch in pqf.iter_batches(batch_size=batch_size, columns=["Channel", "UnixTime"]):
+            ch_arr = batch.column("Channel").to_numpy()
+            time_arr = batch.column("UnixTime").to_numpy()
+            arr = time_arr[ch_arr == channel]
+            for t in arr:
+                idx = int((t - run_start_ts) // bin_size)
+                if idx >= 0:
+                    counts[idx] += 1
+
+    elif suffix == ".feather":
+        dataset = ds.dataset(str(file_path), format="feather")
+        scanner = dataset.scanner(batch_size=batch_size, columns=["Channel", "UnixTime"])
+        for batch in scanner.to_batches():
+            ch_arr = batch["Channel"].to_numpy()
+            time_arr = batch["UnixTime"].to_numpy()
+            arr = time_arr[ch_arr == channel]
+            for t in arr:
+                idx = int((t - run_start_ts) // bin_size)
+                if idx >= 0:
+                    counts[idx] += 1
+
+    elif suffix == ".root":
+        tree_path = f"{file_path}:{root_tree}"
+        for batch in uproot.iterate(tree_path, ["Channel", "UnixTime"], step_size=batch_size):
+            ch_arr = batch["Channel"].to_numpy()
+            time_arr = batch["UnixTime"].to_numpy()
+            arr = time_arr[ch_arr == channel]
+            for t in arr:
+                idx = int((t - run_start_ts) // bin_size)
+                if idx >= 0:
+                    counts[idx] += 1
+
+    else:
+        raise ValueError(f"Unsupported format: {file_path.suffix}")
+
+    if not counts:
+        raise RuntimeError("No hits found in file.")
+
+    # Build sorted time and rate arrays
+    bins = np.array(sorted(counts.keys()), dtype=int)
+    times = bins * bin_size + run_start_ts
+
+    # apply end_time override
+    if end_time is not None:
+        et = end_time.timestamp() if isinstance(end_time, datetime.datetime) else float(end_time)
+        max_bin = math.ceil((et - run_start_ts) / bin_size)
+        mask = bins <= max_bin
+        bins = bins[mask]
+        times = bins * bin_size + run_start_ts
+
+    # convert to datetime for plotting
+    dtimes = [datetime.datetime.fromtimestamp(ts) for ts in times]
+    if plot_hits:
+        rates = np.array([counts[b] * scale_factor for b in bins], dtype=int)
+    else:
+        rates = np.array([counts[b] * scale_factor / bin_size for b in bins], dtype=int)
+
+    # Plot
+    plt.style.use(hep.style.CMS)
+
+    # Create figure and axis with custom size and create the plot
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.step(dtimes, rates, where="post", color=color)
+
+    # CMS label with customizable right text
+    hep.cms.label(cms_label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+
+    # Optional main title
+    if title:
+        ax.set_title(title, pad=12, weight="bold")
+
+    # Y-axis scale and formatting
+    if log_y:
+        ax.set_yscale('log')
+
+    ax.set_xlabel("Time")
+    if plot_hits:
+        ax.set_ylabel(f"Hits per {bin_size:.1f} s")
+    else:
+        ax.set_ylabel("Hit Rate [Hz]")
+
+    # date formatting
+    locator = AutoDateLocator()
+    formatter = AutoDateFormatter(locator)
+    ax.xaxis.set_major_locator(locator)
+    ax.xaxis.set_major_formatter(formatter)
+
+    ax.set_xlim(dtimes[0], dtimes[-1])
+
+    # format x-axis as dates
+    fig.autofmt_xdate()
+
+    plt.tight_layout()
+
+    return fig
