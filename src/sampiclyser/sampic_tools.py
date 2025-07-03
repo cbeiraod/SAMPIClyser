@@ -422,6 +422,56 @@ def get_file_metadata(file_path: Path) -> dict[str, object]:
         raise ValueError(f"Unsupported format: {file_path.suffix}")
 
 
+def get_period_from_file_metadata(metadata: dict[str, object]) -> float:
+    """
+    Compute the sampling period (seconds per sample) from file metadata.
+
+    Parameters
+    ----------
+    metadata : dict of str → object
+        Dictionary of file metadata. Must contain the key
+        ``'sampling_frequency'`` whose value is a string of the form
+        ``"<freq> <unit>"``, where:
+
+        - ``<freq>`` is a floating-point number (e.g. "5.0")
+        - ``<unit>`` is either `"MS/s"` (megasamples per second) or
+          `"kS/s"` (kilosamples per second).
+
+    Returns
+    -------
+    period : float
+        Time interval between consecutive samples, in seconds.
+
+    Raises
+    ------
+    KeyError
+        If the metadata dict does not include the `"sampling_frequency"` key.
+    RuntimeError
+        If the unit parsed from `"sampling_frequency"` is not one of
+        `"MS/s"` or `"kS/s"`.
+
+    Examples
+    --------
+    >>> meta = {"sampling_frequency": "5 MS/s"}
+    >>> get_period_from_file_metadata(meta)
+    2e-07
+    >>> meta = {"sampling_frequency": "10 kS/s"}
+    >>> get_period_from_file_metadata(meta)
+    0.0001
+    """
+    freq, rate = metadata['sampling_frequency'].split(' ')
+    freq = float(freq)
+
+    if rate == "MS/s":
+        period = 1.0 / (freq * 1e6)
+    elif rate == "kS/s":
+        period = 1.0 / (freq * 1e3)
+    else:
+        raise RuntimeError(f"Unknown rate: {rate}")
+
+    return period
+
+
 def plot_hit_rate(  # noqa: max-complexity=22
     file_path: Path,
     bin_size: float = 1.0,
