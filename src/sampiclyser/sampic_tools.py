@@ -865,9 +865,9 @@ def plot_channel_hit_rate(  # noqa: max-complexity=22
 
     ax.set_xlabel("Time")
     if plot_hits:
-        ax.set_ylabel(f"Hits per {bin_size:.1f} s")
+        ax.set_ylabel(f"Channel {channel} hits per {bin_size:.1f} s")
     else:
-        ax.set_ylabel("Hit Rate [Hz]")
+        ax.set_ylabel(f"Channel {channel} hit Rate [Hz]")
 
     # date formatting
     locator = AutoDateLocator()
