@@ -940,6 +940,10 @@ def windowed_sinc_interpolation(t_orig: np.ndarray, y_orig: np.ndarray, t_new: n
     >>> t_fine = np.linspace(0, 1, 101)
     >>> y_fine = windowed_sinc_interpolation(t, y, t_fine, window='hann', M=4)
     """
+    # Validate inputs
+    t_orig = np.asarray(t_orig, dtype=float)
+    y_orig = np.asarray(y_orig, dtype=float)
+    t_new = np.asarray(t_new, dtype=float)
 
     # Basic validation
     if t_orig.ndim != 1 or y_orig.ndim != 1:
@@ -983,5 +987,109 @@ def windowed_sinc_interpolation(t_orig: np.ndarray, y_orig: np.ndarray, t_new: n
         # compute sinc((tn - ti)/T)
         sinc_vals = np.sinc((tn - ti) / T)
         y_new[i] = np.dot(yi * sinc_vals, wi)
+
+    return y_new
+
+
+def lanczos_interpolation(t_orig: np.ndarray, y_orig: np.ndarray, t_new: np.ndarray, a: int = 3) -> np.ndarray:
+    """
+    Interpolate a uniformly sampled signal using the Lanczos kernel.
+
+    The Lanczos filter uses a windowed sinc kernel of order `a`:
+    L(x) = sinc(x) · sinc(x / a) for |x| ≤ a, zero otherwise. This
+    yields near-ideal bandlimited interpolation with reduced ringing.
+
+    Parameters
+    ----------
+    t_orig : ndarray of float, shape (N,)
+        Original, uniformly spaced sample times.
+    y_orig : ndarray of float, shape (N,)
+        Original sample values.
+    t_new : ndarray of float, shape (M,)
+        Desired output times (must lie within the range of `t_orig`).
+    a : int, optional
+        Lanczos order (kernel half-width in samples). Common choices are
+        2 or 3. Default is 3.
+
+    Returns
+    -------
+    y_new : ndarray of float, shape (M,)
+        Interpolated values at `t_new`.
+
+    Raises
+    ------
+    ValueError
+        If `t_orig` and `y_orig` are not 1D arrays of equal length,
+        or if `t_new` lies outside the range `[t_orig.min(), t_orig.max()]`,
+        or if `a` is not a positive integer.
+
+    Notes
+    -----
+    - Assumes uniform spacing in `t_orig`.  If spacing varies, results
+      will be invalid.
+    - For each `t_new[i]`, the kernel covers indices `k` from
+      `⌈(t_new[i]-t_orig[0])/T⌉ - a + 1` to `⌊(t_new[i]-t_orig[0])/T⌋ + a`,
+      where `T = t_orig[1] - t_orig[0]`.
+    - Out-of-bounds sample indices are clipped to the valid range.
+    - The kernel is defined as:
+      ```
+      L_n = sinc((t_new-t_orig[n])/T) * sinc((t_new-t_orig[n])/(a*T))
+      ```
+      and `y_new[i] = Σ_n y_orig[n] · L_n`.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> t = np.linspace(0, 1, 11)
+    >>> y = np.sin(2*np.pi*5*t)
+    >>> t_fine = np.linspace(0, 1, 101)
+    >>> y_fine = lanczos_interpolation(t, y, t_fine, a=3)
+    """
+    # Validate inputs
+    t_orig = np.asarray(t_orig, dtype=float)
+    y_orig = np.asarray(y_orig, dtype=float)
+    t_new = np.asarray(t_new, dtype=float)
+
+    if t_orig.ndim != 1 or y_orig.ndim != 1:
+        raise ValueError("t_orig and y_orig must be 1D arrays")
+    if t_orig.shape != y_orig.shape:
+        raise ValueError("t_orig and y_orig must have the same length")
+    if t_new.ndim != 1:
+        raise ValueError("t_new must be a 1D array")
+    if a < 1 or not isinstance(a, int):
+        raise ValueError("Lanczos order 'a' must be a positive integer")
+    if t_new.min() < t_orig.min() or t_new.max() > t_orig.max():
+        raise ValueError("t_new values must lie within the range of t_orig")
+
+    t_min, _ = t_orig[0], t_orig[-1]
+
+    # Uniform sample interval
+    T = t_orig[1] - t_orig[0]
+    if not np.allclose(np.diff(t_orig), T, atol=1e-8 * abs(T)):
+        raise ValueError("t_orig must be uniformly spaced")
+
+    y_new = np.empty_like(t_new, dtype=float)
+
+    # Precompute sinc denominator factor
+    for i, tn in enumerate(t_new):
+        # position in sample units
+        x = (tn - t_min) / T
+        m = int(np.floor(x))
+        # kernel support indices
+        k = np.arange(m - a + 1, m + a + 1, dtype=int)
+        # Keep only in-bounds sample indices
+        mask = (k >= 0) & (k < len(t_orig))
+        k_clipped = k[mask]
+        t_k = t_orig[k_clipped]
+        y_k = y_orig[k_clipped]
+
+        # compute lanczos kernel: sinc + windowed sinc
+        arg = (tn - t_k) / T
+        lanczos_kernel = np.sinc(arg) * np.sinc(arg / a)
+
+        # Renormalize so the truncated kernel sums to 1
+        lanczos_kernel /= np.sum(lanczos_kernel)
+
+        y_new[i] = np.dot(y_k, lanczos_kernel)
 
     return y_new
