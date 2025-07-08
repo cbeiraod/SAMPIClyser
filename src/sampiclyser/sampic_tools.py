@@ -883,3 +883,105 @@ def plot_channel_hit_rate(  # noqa: max-complexity=22
     plt.tight_layout()
 
     return fig
+
+
+def windowed_sinc_interpolation(t_orig: np.ndarray, y_orig: np.ndarray, t_new: np.ndarray, window: str = 'hann', M: int = 8) -> np.ndarray:
+    r"""
+    Band-limited interpolation of a uniformly sampled signal using a windowed sinc kernel.
+
+    Constructs a truncated sinc filter of half-width `M` samples, applies a smooth
+    tapering window (Hann or Hamming) to reduce ringing, and convolves it with the
+    input data to estimate values at new time points.
+
+    Parameters
+    ----------
+    t_orig : ndarray of float, shape (N,)
+        Original sample times (must be uniformly spaced).
+    y_orig : ndarray of float, shape (N,)
+        Original sample values.
+    t_new : ndarray of float, shape (M_new,)
+        Desired output times (must lie within the range of `t_orig`).
+    window : {'hann', 'hamming'}, optional
+        Type of tapering window to apply to the sinc kernel.  Default is 'hann'.
+    M : int, optional
+        Half-width of the truncated sinc kernel, in number of original samples.
+        Total kernel length will be `2*M + 1`.  Default is 8.
+
+    Returns
+    -------
+    y_new : ndarray of float, shape (M_new,)
+        Interpolated values at `t_new`.
+
+    Raises
+    ------
+    ValueError
+        If `t_orig` is not at least two points, if `window` is not recognized,
+        or if `t_new` contains values outside the range of `t_orig`.
+
+    Notes
+    -----
+    - This implementation assumes `t_orig` is **uniformly** spaced.  If that is
+      not the case, consider first resampling to a uniform grid or using a
+      more general interpolator.
+    - The Hann window is defined as
+      $$ w[k] = 0.5 + 0.5\cos\bigl(2\pi k/(2M+1)\bigr),\quad k=-M\ldots M. $$
+    - The Hamming window uses
+      $$ w[k] = 0.54 + 0.46\cos\bigl(2\pi k/(2M+1)\bigr). $$
+    - Each output sample `y_new[i]` is
+      $$ \sum_{k=-M}^{M} y_{\!n}\,\text{sinc}\bigl((t_{\!new}-t_{\!orig,n})/T\bigr)\,w[k], $$
+      where \(T\) is the uniform sample spacing and \(n\) is chosen so that
+      \(t_{\!orig,n}\) is the nearest original sample to each \(t_{\!new,i}\).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> t = np.linspace(0, 1, 11)
+    >>> y = np.sin(2*np.pi*5*t)
+    >>> t_fine = np.linspace(0, 1, 101)
+    >>> y_fine = windowed_sinc_interpolation(t, y, t_fine, window='hann', M=4)
+    """
+
+    # Basic validation
+    if t_orig.ndim != 1 or y_orig.ndim != 1:
+        raise ValueError("t_orig and y_orig must be 1D arrays")
+    if t_orig.size < 2:
+        raise ValueError("Need at least two original samples for interpolation")
+    if t_new.ndim != 1:
+        raise ValueError("t_new must be a 1D array")
+    if t_new.min() < t_orig.min() or t_new.max() > t_orig.max():
+        raise ValueError("t_new values must lie within the range of t_orig")
+    if window not in ('hann', 'hamming'):
+        raise ValueError(f"Unknown window type '{window}'; use 'hann' or 'hamming'")
+
+    # Uniform spacing
+    T = t_orig[1] - t_orig[0]
+    if not np.allclose(np.diff(t_orig), T, atol=1e-8 * T):
+        raise ValueError("t_orig must be uniformly spaced")
+
+    # Precompute windowed‐sinc kernel indices and window
+    k = np.arange(-M, M + 1)
+    if window == 'hann':
+        w = 0.5 + 0.5 * np.cos(2 * np.pi * k / (2 * M + 1))
+    else:  # 'hamming'
+        w = 0.54 + 0.46 * np.cos(2 * np.pi * k / (2 * M + 1))
+    w = w / w[M]  # normalize to 1 at center
+
+    y_new = np.empty_like(t_new, dtype=float)
+
+    # For each target time, center the kernel at the nearest original sample
+    for i, tn in enumerate(t_new):
+        # find nearest index in t_orig
+        n0 = int(np.round((tn - t_orig[0]) / T))
+        idx = n0 + k
+
+        # mask out-of-bounds indices
+        valid = (idx >= 0) & (idx < t_orig.size)
+        ti = t_orig[idx[valid]]
+        yi = y_orig[idx[valid]]
+        wi = w[valid]
+
+        # compute sinc((tn - ti)/T)
+        sinc_vals = np.sinc((tn - ti) / T)
+        y_new[i] = np.dot(yi * sinc_vals, wi)
+
+    return y_new
