@@ -26,6 +26,8 @@ import math
 import struct
 from collections import Counter
 from pathlib import Path
+from typing import Optional
+from typing import Tuple
 
 import matplotlib.pyplot as plt
 import mplhep as hep
@@ -40,6 +42,8 @@ import uproot
 from matplotlib.dates import AutoDateFormatter
 from matplotlib.dates import AutoDateLocator
 from matplotlib.ticker import FormatStrFormatter
+from scipy.signal import resample
+from scipy.signal import resample_poly
 
 
 def get_channel_hits(file_path: Path, batch_size: int = 100_000, root_tree: str = "sampic_hits") -> pd.DataFrame:
@@ -1093,3 +1097,119 @@ def lanczos_interpolation(t_orig: np.ndarray, y_orig: np.ndarray, t_new: np.ndar
         y_new[i] = np.dot(y_k, lanczos_kernel)
 
     return y_new
+
+
+def apply_interpolation_method(
+    x_orig: np.ndarray,
+    y_orig: np.ndarray,
+    period: float,
+    interpolation_method: Optional[str] = "sinc",
+    interpolation_factor: int = 4,
+    interpolation_parameter: int = 8,
+    offset: Optional[float] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Interpolate a uniformly sampled waveform using various methods.
+
+    Parameters
+    ----------
+    x_orig : ndarray, shape (N,)
+        Original sample times (must be monotonically increasing and
+        uniformly spaced by `period`).
+    y_orig : ndarray, shape (N,)
+        Original sample values.
+    period : float
+        Time interval between consecutive samples in `x_orig`.
+    interpolation_method : {'sinc', 'hann', 'hamming', 'lanczos', 'resample', 'resample_poly'}, optional
+        Which method to use:
+        - `'sinc'`         : ideal sinc interpolation (no window)
+        - `'hann'`         : windowed-sinc with Hann window
+        - `'hamming'`      : windowed-sinc with Hamming window
+        - `'lanczos'`      : Lanczos kernel of order `interpolation_parameter`
+        - `'resample'`     : FFT-based resample via `scipy.signal.resample`
+        - `'resample_poly'`: polyphase FIR via `scipy.signal.resample_poly`
+        Default is `'sinc'`.
+    interpolation_factor : int, optional
+        Upsampling factor: number of output points = `len(x_orig) * interpolation_factor`.
+        Must be ≥ 1.  Default is 4.
+    interpolation_parameter : int, optional
+        Secondary parameter for certain methods:
+        - For `'hann'`/`'hamming'`, this is the half-width `M` of the windowed-sinc.
+        - For `'lanczos'`, this is the Lanczos order `a`.
+        - For `'resample_poly'`, this is the FIR window's beta (in a Kaiser window).
+        Ignored by `'sinc'` and `'resample'`.  Default is 8.
+    offset : float or None, optional
+        Baseline offset to subtract before interpolation, then add back afterward.
+        If None, treated as zero.  Default is None.
+
+    Returns
+    -------
+    x_fine : ndarray, shape (N * interpolation_factor,)
+        Uniformly spaced output time axis from `x_orig[0]` to `x_orig[-1]`.
+    y_fine : ndarray, same shape as `x_fine`
+        Interpolated sample values.
+
+    Raises
+    ------
+    ValueError
+        - If `x_orig` and `y_orig` have mismatched lengths or are not 1-D.
+        - If `interpolation_factor` < 1.
+        - If `interpolation_method` is unrecognized.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> t = np.linspace(0, 1, 11)
+    >>> y = np.sin(2*np.pi*5*t)
+    >>> t_fine, y_fine = apply_interpolation_method(t, y, t[1]-t[0], interpolation_method='sinc')
+    """
+    # Input validation
+    x_orig = np.asarray(x_orig, dtype=float)
+    y_orig = np.asarray(y_orig, dtype=float)
+
+    if x_orig.ndim != 1 or y_orig.ndim != 1:
+        raise ValueError("x_orig and y_orig must be 1D arrays")
+    if x_orig.shape != y_orig.shape:
+        raise ValueError("x_orig and y_orig must have the same length")
+    if interpolation_factor < 1:
+        raise ValueError("interpolation_factor must be >= 1")
+    offset = 0.0 if offset is None else float(offset)
+
+    # Build the fine grid once
+    num_fine = len(x_orig) * interpolation_factor
+    x_fine = np.linspace(x_orig[0], x_orig[-1], num_fine)
+
+    # Dispatch to the chosen method
+    method = interpolation_method.lower() if interpolation_method else ""
+    if method == "sinc":
+        kernel = np.sinc((x_fine[:, None] - x_orig[None, :]) / period)
+        y_fine = kernel.dot(y_orig - offset) + offset
+
+    elif method in ("hann", "hamming"):
+        y_fine = (
+            windowed_sinc_interpolation(t_orig=x_orig, y_orig=y_orig - offset, t_new=x_fine, window=method, M=interpolation_parameter)
+            + offset
+        )
+
+    elif method == "lanczos":
+        y_fine = lanczos_interpolation(t_orig=x_orig, y_orig=y_orig - offset, t_new=x_fine, a=interpolation_parameter) + offset
+
+    elif method == "resample":
+        # scipy.signal.resample returns (y_new, x_new) if given t=x_orig
+        y_fine, x_temp = resample(y_orig - offset, num=num_fine, t=x_orig)
+        # override x_fine to match returned times
+        x_fine = x_temp
+        y_fine = y_fine + offset
+
+    elif method == "resample_poly":
+        y_fine = (
+            resample_poly(
+                x=y_orig - offset, up=interpolation_factor, down=1, window=('kaiser', interpolation_parameter), padtype='constant', cval=0.0
+            )
+            + offset
+        )
+
+    else:
+        raise ValueError(f"Unknown interpolation method: {interpolation_method!r}")
+
+    return x_fine, y_fine
