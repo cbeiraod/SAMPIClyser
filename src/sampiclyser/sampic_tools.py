@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Iterator
 from typing import Optional
 from typing import Sequence
+from typing import Set
 from typing import Tuple
 from typing import Union
 
@@ -1193,3 +1194,95 @@ def apply_interpolation_method(
         raise ValueError(f"Unknown interpolation method: {interpolation_method!r}")
 
     return x_fine, y_fine
+
+
+def select_waveforms(
+    batches: Iterator[Union[RecordBatch, ak.highlevel.Array]], first_hit: int, num_hits: int, channel_filter: Optional[Set[int]] = None
+) -> Iterator[Tuple[int, float, int, np.ndarray, np.ndarray]]:
+    """
+    Flatten record batches or Awkward arrays into individual waveform records,
+    with optional hit-index slicing and channel filtering.
+
+    Parameters
+    ----------
+    batches : iterator of RecordBatch or awkward.highlevel.Array
+        Stream of data blocks each containing the fields
+        `'HITNumber'`, `'Channel'`, `'Baseline'`, `'DataSize'`, `'TriggerPosition'`, and `'DataSample'`.
+    first_hit : int
+        Number of initial hits to skip before yielding.
+    num_hits : int
+        Maximum number of hits to yield after skipping `first_hit`.
+    channel_filter : set of int or None, optional
+        If provided, only waveforms whose channel index is in this set are yielded.
+
+    Yields
+    ------
+    hit_number : int
+        The sequential hit number given by SAMPIC to this waveform.
+    channel : int
+        SAMPIC channel index for this waveform.
+    baseline : float
+        Baseline offset for the waveform.
+    n_samples : int
+        Number of ADC samples in this waveform.
+    trigger_positions : ndarray of int
+        1D array of length `n_samples`, with 0/1 indicating trigger positions.
+    samples : ndarray of float
+        1D array of length `n_samples` containing the ADC values.
+
+    Raises
+    ------
+    ValueError
+        If a batch is missing any of the required fields.
+
+    Notes
+    -----
+    - Uses duck typing to detect a PyArrow RecordBatch (has `.column()`) vs.
+      an Awkward Array (indexable by field name).
+    - Stops iteration once `num_hits` waveforms have been yielded.
+    """
+    required_fields = {"HITNumber", "Channel", "Baseline", "DataSize", "TriggerPosition", "DataSample"}
+    count = 0
+    yielded = 0
+
+    for batch in batches:
+        # Verify required fields exist
+        batch_fields = set(batch.schema.names) if isinstance(batch, RecordBatch) else set(batch.fields)
+        missing = required_fields - batch_fields
+        if missing:
+            raise ValueError(f"Batch is missing required fields: {missing}")
+
+        # Extract common columns
+        hitids = batch['HITNumber'].to_numpy()
+        channels = batch['Channel'].to_numpy()
+        baselines = batch['Baseline'].to_numpy()
+        sizes = batch['DataSize'].to_numpy()
+
+        # Extract trigger positions and samples, allowing copy for Arrow
+        if hasattr(batch, "column"):
+            triggers = batch["TriggerPosition"].to_numpy(zero_copy_only=False)
+            samples = batch["DataSample"].to_numpy(zero_copy_only=False)
+        else:
+            triggers = batch["TriggerPosition"].to_numpy()
+            samples = batch["DataSample"].to_numpy()
+
+        # Iterate waveform by waveform
+        for hid, ch, bl, n, tp, data in zip(hitids, channels, baselines, sizes, triggers, samples):
+            # Channel filter
+            if channel_filter is not None and ch not in channel_filter:
+                count += 1
+                continue
+
+            # Skip until first_hit
+            if count < first_hit:
+                count += 1
+                continue
+
+            # Stop after num_hits
+            if yielded >= num_hits:
+                return
+
+            # Yield the waveform tuple
+            yield int(hid), int(ch), float(bl), int(n), np.asarray(tp), np.asarray(data)
+            count += 1
+            yielded += 1
