@@ -26,9 +26,13 @@ import math
 import struct
 from collections import Counter
 from pathlib import Path
+from typing import Iterator
 from typing import Optional
+from typing import Sequence
 from typing import Tuple
+from typing import Union
 
+import awkward as ak
 import matplotlib.pyplot as plt
 import mplhep as hep
 import numpy as np
@@ -42,8 +46,62 @@ import uproot
 from matplotlib.dates import AutoDateFormatter
 from matplotlib.dates import AutoDateLocator
 from matplotlib.ticker import FormatStrFormatter
+from pyarrow import RecordBatch
 from scipy.signal import resample
 from scipy.signal import resample_poly
+
+
+def open_hit_reader(
+    file_path: Path, cols: Sequence[str], batch_size: int = 100_000, root_tree: str = "sampic_hits"
+) -> Iterator[Union[RecordBatch, ak.highlevel.Array]]:
+    """
+    Stream selected columns from a SAMPIC output file in memory-efficient batches.
+
+    This function reads only the specified columns from large data files (Parquet,
+    Feather, or ROOT) in fixed-size batches, yielding either Arrow RecordBatches
+    (for Parquet/Feather) or dictionaries of NumPy arrays (for ROOT).
+
+    Parameters
+    ----------
+    file_path : pathlib.Path
+        Path to the input file. Supported extensions:
+        - `.parquet` or `.pq` for Parquet
+        - `.feather` for Arrow Feather IPC
+        - `.root` for ROOT files containing a TTree named `root_tree`
+    cols : sequence of str
+        Names of the columns (or ROOT branches) to read.
+    batch_size : int, optional
+        Maximum number of rows/entries per yielded batch (default: 100000).
+    root_tree : str, optional
+        Name of the ROOT TTree to read from (default: "sampic_hits").
+
+    Yields
+    ------
+    RecordBatch or dict
+        - For Parquet/Feather: `pyarrow.RecordBatch` containing the requested columns.
+        - For ROOT: dict mapping branch names to NumPy arrays for each batch.
+
+    Raises
+    ------
+    ValueError
+        If the file extension is not among the supported types.
+    """
+    suffix = file_path.suffix.lower()
+    if suffix in ('.parquet', '.pq'):
+        pqf = pq.ParquetFile(str(file_path))
+        yield from pqf.iter_batches(batch_size=batch_size, columns=list(cols))
+
+    elif suffix == ".feather":
+        dataset = ds.dataset(str(file_path), format="feather")
+        scanner = dataset.scanner(batch_size=batch_size, columns=list(cols))
+        yield from scanner.to_batches()
+
+    elif suffix == ".root":
+        tree_path = f"{file_path}:{root_tree}"
+        yield from uproot.iterate(tree_path, list(cols), step_size=batch_size)
+
+    else:
+        raise ValueError(f"Unsupported file format: {suffix}")
 
 
 def get_channel_hits(file_path: Path, batch_size: int = 100_000, root_tree: str = "sampic_hits") -> pd.DataFrame:
@@ -80,47 +138,20 @@ def get_channel_hits(file_path: Path, batch_size: int = 100_000, root_tree: str 
         If the file suffix is not one of `.feather`, `.parquet`, or `.root`.
     """
     counts = Counter()
-    suffix = file_path.suffix.lower()
 
-    if suffix in (".parquet", ".pq"):
-        # Parquet: iterate row‐group batches of just the Channel column
-        pqf = pq.ParquetFile(str(file_path))
-        for batch in pqf.iter_batches(batch_size=batch_size, columns=["Channel"]):
+    for batch in open_hit_reader(file_path=file_path, cols=["Channel"], batch_size=batch_size, root_tree=root_tree):
+        # Duck‐type: try Arrow first, else assume Awkward
+        if hasattr(batch, "column"):
+            # PyArrow RecordBatch
             arr = batch.column("Channel").to_numpy()
-            uniques, cnts = np.unique(arr, return_counts=True)
-            for ch, cnt in zip(uniques, cnts):
-                counts[int(ch)] += int(cnt)
+        else:
+            # Awkward Array from uproot.iterate
+            # convert to numpy via __array__ interface
+            arr = np.asarray(batch["Channel"])
 
-    elif suffix == ".feather":
-        # Feather (Arrow IPC): open and iterate record batches
-        dataset = ds.dataset(str(file_path), format="feather")
-        scanner = dataset.scanner(batch_size=batch_size, columns=["Channel"])
-        for batch in scanner.to_batches():
-            arr = batch["Channel"].to_numpy()
-            uniques, cnts = np.unique(arr, return_counts=True)
-            for ch, cnt in zip(uniques, cnts):
-                counts[int(ch)] += int(cnt)
-
-        # with open(file_path, "rb") as f:
-        #     reader = ipc.open_file(f)
-        #     for i in range(reader.num_record_batches):
-        #         batch = reader.get_batch(i)
-        #         arr = batch.column("Channel").to_numpy()
-        #         uniques, cnts = np.unique(arr, return_counts=True)
-        #         for ch, cnt in zip(uniques, cnts):
-        #             counts[int(ch)] += int(cnt)
-
-    elif suffix == ".root":
-        # ROOT: use uproot.iterate to stream the 'Channel' branch
-        tree_path = f"{file_path}:{root_tree}"
-        for batch in uproot.iterate(tree_path, ["Channel"], step_size=batch_size):
-            arr = batch["Channel"]
-            uniques, cnts = np.unique(arr, return_counts=True)
-            for ch, cnt in zip(uniques, cnts):
-                counts[int(ch)] += int(cnt)
-
-    else:
-        raise ValueError(f"Unsupported file format: {file_path.suffix}")
+        uniques, cnts = np.unique(arr, return_counts=True)
+        for ch, cnt in zip(uniques, cnts):
+            counts[int(ch)] += int(cnt)
 
     # Build and return the summary DataFrame
     df = pd.DataFrame(sorted(counts.items()), columns=["Channel", "Hits"])

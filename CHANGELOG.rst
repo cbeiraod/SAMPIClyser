@@ -4,6 +4,9 @@ Changelog
 Current (2025-06-27)
 --------------------
 
+* Added entry point only for printing channel hits
+* Started refactoring SAMPIC hit reading into its own dedicated function, yielding batches
+* Added steering function to apply interpolation
 * Added Lanczos interpolation function
 * Added windowed sinc interpolation function
 * Added scipy as a dependency for signal processing

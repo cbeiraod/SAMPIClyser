@@ -54,6 +54,28 @@ def version():
 
 @cli.command()
 @click.argument('decoded_file', type=click.Path(exists=True, path_type=Path))
+@click.option(
+    '--root-tree',
+    'root_tree',
+    type=str,
+    default="sampic_hits",
+    help='The name of the root ttree under which to save the hit data. Default: sampic_hits',
+)
+def print_channel_hits(
+    decoded_file: Path,
+    root_tree: str,
+):
+    """
+    Print channel hit counts from a decoded SAMPIC run file.
+    """
+
+    hit_summary = sampiclyser.get_channel_hits(file_path=decoded_file, root_tree=root_tree)
+
+    click.echo(hit_summary)
+
+
+@cli.command()
+@click.argument('decoded_file', type=click.Path(exists=True, path_type=Path))
 @click.option('--first', '-f', type=int, required=True, help='First channel to consider')
 @click.option('--last', '-l', type=int, required=True, help='Last channel to consider')
 @click.option('--output', '-o', type=click.Path(path_type=Path), help='Path to save the plot')
