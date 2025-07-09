@@ -4,6 +4,8 @@ Changelog
 Current (2025-06-27)
 --------------------
 
+* Finished refactoring hit reading
+* Small fix to rate plots so 0 bins are shown
 * Added entry point only for printing channel hits
 * Started refactoring SAMPIC hit reading into its own dedicated function, yielding batches
 * Added steering function to apply interpolation

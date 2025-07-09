@@ -140,14 +140,7 @@ def get_channel_hits(file_path: Path, batch_size: int = 100_000, root_tree: str 
     counts = Counter()
 
     for batch in open_hit_reader(file_path=file_path, cols=["Channel"], batch_size=batch_size, root_tree=root_tree):
-        # Duck‐type: try Arrow first, else assume Awkward
-        if hasattr(batch, "column"):
-            # PyArrow RecordBatch
-            arr = batch.column("Channel").to_numpy()
-        else:
-            # Awkward Array from uproot.iterate
-            # convert to numpy via __array__ interface
-            arr = np.asarray(batch["Channel"])
+        arr = batch["Channel"].to_numpy()
 
         uniques, cnts = np.unique(arr, return_counts=True)
         for ch, cnt in zip(uniques, cnts):
@@ -609,51 +602,21 @@ def plot_hit_rate(  # noqa: max-complexity=22
             run_start_ts = math.floor(st / bin_size) * bin_size
 
     counts = Counter()
-    suffix = file_path.suffix.lower()
 
-    if suffix in (".parquet", ".pq"):
-        pqf = pq.ParquetFile(str(file_path))
-        for batch in pqf.iter_batches(batch_size=batch_size, columns=["UnixTime"]):
-            arr = batch.column("UnixTime").to_numpy()
-            for t in arr:
-                idx = int((t - run_start_ts) // bin_size)
-                if idx >= 0:
-                    counts[idx] += 1
+    for batch in open_hit_reader(file_path=file_path, cols=["UnixTime"], batch_size=batch_size, root_tree=root_tree):
+        arr = batch["UnixTime"].to_numpy()
 
-    elif suffix == ".feather":
-        dataset = ds.dataset(str(file_path), format="feather")
-        scanner = dataset.scanner(batch_size=batch_size, columns=["UnixTime"])
-        for batch in scanner.to_batches():
-            arr = batch["UnixTime"].to_numpy()
-            for t in arr:
-                idx = int((t - run_start_ts) // bin_size)
-                if idx >= 0:
-                    counts[idx] += 1
-
-        # with open(file_path, "rb") as f:
-        #     reader = ipc.open_file(f)
-        #     for i in range(reader.num_record_batches):
-        #         batch = reader.get_batch(i)
-        #         arr = batch.column("UnixTime").to_numpy()
-        #         for t in arr:
-        #             idx = int((t - start_ts) // bin_size)
-        #             if idx >= 0:
-        #                 counts[idx] += 1
-
-    elif suffix == ".root":
-        tree_path = f"{file_path}:{root_tree}"
-        for batch in uproot.iterate(tree_path, ["UnixTime"], step_size=batch_size):
-            arr = batch["UnixTime"]
-            for t in arr:
-                idx = int((t - run_start_ts) // bin_size)
-                if idx >= 0:
-                    counts[idx] += 1
-
-    else:
-        raise ValueError(f"Unsupported format: {file_path.suffix}")
+        for t in arr:
+            idx = int((t - run_start_ts) // bin_size)
+            if idx >= 0:
+                counts[idx] += 1
 
     if not counts:
         raise RuntimeError("No hits found in file.")
+
+    for idx in range(max(counts.keys())):
+        if idx not in counts:
+            counts[idx] = 0
 
     # Build sorted time and rate arrays
     bins = np.array(sorted(counts.keys()), dtype=int)
@@ -679,7 +642,7 @@ def plot_hit_rate(  # noqa: max-complexity=22
 
     # Create figure and axis with custom size and create the plot
     fig, ax = plt.subplots(figsize=figsize)
-    ax.step(dtimes, rates, where="post", color=color)
+    ax.step(dtimes, rates, where="mid", color=color)
 
     # CMS label with customizable right text
     hep.cms.label(cms_label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
@@ -819,47 +782,33 @@ def plot_channel_hit_rate(  # noqa: max-complexity=22
             run_start_ts = math.floor(st / bin_size) * bin_size
 
     counts = Counter()
-    suffix = file_path.suffix.lower()
 
-    if suffix in (".parquet", ".pq"):
-        pqf = pq.ParquetFile(str(file_path))
-        for batch in pqf.iter_batches(batch_size=batch_size, columns=["Channel", "UnixTime"]):
-            ch_arr = batch.column("Channel").to_numpy()
-            time_arr = batch.column("UnixTime").to_numpy()
-            arr = time_arr[ch_arr == channel]
-            for t in arr:
-                idx = int((t - run_start_ts) // bin_size)
-                if idx >= 0:
-                    counts[idx] += 1
+    for batch in open_hit_reader(file_path=file_path, cols=["Channel", "UnixTime"], batch_size=batch_size, root_tree=root_tree):
+        # Duck‐type: try Arrow first, else assume Awkward
+        # if hasattr(batch, "column"):
+        #     # PyArrow RecordBatch
+        #     ch_arr = batch.column("Channel").to_numpy()
+        #     time_arr = batch.column("UnixTime").to_numpy()
+        # else:
+        #     # Awkward Array from uproot.iterate
+        #     # convert to numpy via __array__ interface
+        #     ch_arr = np.asarray(batch["Channel"])
+        #     time_arr = np.asarray(batch["UnixTime"])
+        ch_arr = batch["Channel"].to_numpy()
+        time_arr = batch["UnixTime"].to_numpy()
 
-    elif suffix == ".feather":
-        dataset = ds.dataset(str(file_path), format="feather")
-        scanner = dataset.scanner(batch_size=batch_size, columns=["Channel", "UnixTime"])
-        for batch in scanner.to_batches():
-            ch_arr = batch["Channel"].to_numpy()
-            time_arr = batch["UnixTime"].to_numpy()
-            arr = time_arr[ch_arr == channel]
-            for t in arr:
-                idx = int((t - run_start_ts) // bin_size)
-                if idx >= 0:
-                    counts[idx] += 1
-
-    elif suffix == ".root":
-        tree_path = f"{file_path}:{root_tree}"
-        for batch in uproot.iterate(tree_path, ["Channel", "UnixTime"], step_size=batch_size):
-            ch_arr = batch["Channel"].to_numpy()
-            time_arr = batch["UnixTime"].to_numpy()
-            arr = time_arr[ch_arr == channel]
-            for t in arr:
-                idx = int((t - run_start_ts) // bin_size)
-                if idx >= 0:
-                    counts[idx] += 1
-
-    else:
-        raise ValueError(f"Unsupported format: {file_path.suffix}")
+        arr = time_arr[ch_arr == channel]
+        for t in arr:
+            idx = int((t - run_start_ts) // bin_size)
+            if idx >= 0:
+                counts[idx] += 1
 
     if not counts:
         raise RuntimeError("No hits found in file.")
+
+    for idx in range(max(counts.keys())):
+        if idx not in counts:
+            counts[idx] = 0
 
     # Build sorted time and rate arrays
     bins = np.array(sorted(counts.keys()), dtype=int)
@@ -885,7 +834,7 @@ def plot_channel_hit_rate(  # noqa: max-complexity=22
 
     # Create figure and axis with custom size and create the plot
     fig, ax = plt.subplots(figsize=figsize)
-    ax.step(dtimes, rates, where="post", color=color)
+    ax.step(dtimes, rates, where="mid", color=color)
 
     # CMS label with customizable right text
     hep.cms.label(cms_label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
