@@ -4,6 +4,7 @@ Changelog
 Current (2025-06-27)
 --------------------
 
+* Added function to reorganize the samples from the circular buffer
 * Added function to yield selected waveforms based on channel and sequential hit position
 * Finished refactoring hit reading
 * Small fix to rate plots so 0 bins are shown

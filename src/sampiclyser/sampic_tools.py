@@ -1286,3 +1286,107 @@ def select_waveforms(
             yield int(hid), int(ch), float(bl), int(n), np.asarray(tp), np.asarray(data)
             count += 1
             yielded += 1
+
+
+def reorder_circular_samples_with_trigger(
+    trig_arr: np.ndarray,
+    samp_arr: np.ndarray,
+    reorder_samples: bool,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Rotate a circular buffer so that the contiguous trigger block (1s) appears at the end.
+
+    Verify that all trigger markers (1s) in a circular array are contiguous,
+    then rotate both the trigger array and optionally the associated sample array so
+    that the block of 1s appears at the end of the array.
+
+    This is useful when interpreting a circular buffer of ADC samples where
+    the trigger position-marked by one or more consecutive 1s—may wrap
+    around the end of the buffer.  After reordering, the data will be in true
+    time-order, with the trigger block at the end.
+
+    In circular context, a block of 1s may wrap from the end back to the start
+    of the array (e.g. [1,0,0,1] is a valid 2-wide trigger block).  This function
+    verifies that all 1s form exactly one circularly-contiguous block, then
+    performs a roll so that those 1s occupy the last positions in the array.
+    The sample array is optionally rotated identically to preserve alignment.
+
+    Parameters
+    ----------
+    trig_arr : ndarray of int (0 or 1), shape (N,)
+        Circular array marking trigger positions.  Must contain one or more
+        contiguous 1s; all other entries must be 0.
+    samp_arr : ndarray, shape (N,)
+        Sample values corresponding to each position in `trig_arr`.
+    reorder_samples : bool
+        Whether to reorder the sample array or keep it as originally presented
+
+    Returns
+    -------
+    trig_reordered : ndarray of int, shape (N,)
+        The trigger array rotated so that its contiguous 1s occupy the final
+        positions of the array.
+    samp_reordered : ndarray, shape (N,)
+        The sample array, optionally rotated identically to `trig_arr` to maintain
+        value-trigger correspondence.
+
+    Raises
+    ------
+    ValueError
+        If `trig_arr` and `samp_arr` have different lengths.
+        If `trig_arr` does not contain any 1s.
+        If the 1s in `trig_arr` are not contiguous.
+
+    Examples
+    --------
+    >>> trig = np.array([0, 0, 1, 1, 0, 0])
+    >>> samp = np.arange(6)
+    >>> t_new, s_new = reorder_circular_samples_with_trigger(trig, samp)
+    >>> t_new
+    array([0, 0, 0, 0, 1, 1])
+    >>> s_new
+    array([4, 5, 0, 1, 2, 3])
+    """
+    # Basic validation
+    if trig_arr.ndim != 1 or samp_arr.ndim != 1:
+        raise ValueError("Both arrays must be 1D")
+    if trig_arr.shape != samp_arr.shape:
+        raise ValueError("trig_arr and samp_arr must have the same shape")
+
+    n = trig_arr.size
+
+    # Find indices of ones
+    ones_idx = np.flatnonzero(trig_arr == 1)
+    if ones_idx.size == 0:
+        raise ValueError("trig_arr must contain at least one '1'")
+
+    # Check contiguity (in circular sense)
+    # Identify breaks in the sorted ones_idx sequence
+    diffs = np.diff(ones_idx)
+    breaks = np.nonzero(diffs != 1)[0]  # indices where run breaks (non-contiguous)
+
+    # Check cases:
+    #   1) no breaks  → single linear run
+    #   2) one break AND wrap condition → circular (wrap) run
+    if breaks.size == 0:
+        # linear run
+        start = ones_idx[0]
+    elif breaks.size == 1 and ones_idx[0] == 0 and ones_idx[-1] == n - 1:
+        # wrap-around run: pick the second run’s start
+        brk = breaks[0]
+        start = ones_idx[brk + 1]
+    else:
+        raise ValueError("1s must form exactly one contiguous block (possibly wrapping) in trig_arr")
+
+    m = ones_idx.size
+    # We want the block of length m to occupy indices [n-m ... n-1].
+    # The element at 'start' should move to index n-m, so shift = (n-m) - start.
+    shift = (n - m) - int(start)
+
+    # Positive shift in np.roll moves elements right
+    trig_reordered = np.roll(trig_arr, shift)
+    if reorder_samples:
+        samp_reordered = np.roll(samp_arr, shift)
+        return trig_reordered, samp_reordered
+    else:
+        return trig_reordered, samp_arr
