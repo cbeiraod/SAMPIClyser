@@ -1331,8 +1331,8 @@ def reorder_circular_samples_with_trigger(
         The sample array, either rotated in lock-step (if `reorder_samples`)
         or returned unchanged.
     start_indicator : ndarray of int (0 or 1), shape (N,)
-        All zeros except a single 1 at the index where the first trigger‐sample
-        appears in the reordered buffer (i.e. the start of the 1‐block).
+        All zeros except a single 1 at the index where the original buffer start
+        appears in the reordered buffer.
 
     Raises
     ------
