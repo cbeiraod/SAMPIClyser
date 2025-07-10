@@ -40,6 +40,13 @@ def sample_mismatch():
     return trig, samp
 
 
+@pytest.fixture
+def bad_shape():
+    trig = np.array([[1, 3], [0, 3], [0, 3]])
+    samp = np.arange(4)
+    return trig, samp
+
+
 def test_linear_run_reorder(sample_linear):
     trig, samp = sample_linear
     trig_out, samp_out, start_mask = reorder_circular_samples_with_trigger(trig, samp, reorder_samples=True)
@@ -85,5 +92,11 @@ def test_non_contiguous_raises(sample_non_contiguous):
 
 def test_shape_mismatch_raises(sample_mismatch):
     trig, samp = sample_mismatch
+    with pytest.raises(ValueError):
+        reorder_circular_samples_with_trigger(trig, samp, reorder_samples=True)
+
+
+def test_bad_shape_raises(bad_shape):
+    trig, samp = bad_shape
     with pytest.raises(ValueError):
         reorder_circular_samples_with_trigger(trig, samp, reorder_samples=True)
