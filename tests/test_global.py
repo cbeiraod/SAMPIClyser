@@ -25,10 +25,10 @@ import pytest
 
 
 def test_version():
-    import sampiclyser
+    from sampiclyser import __version__ as sampiclyserversion
 
     version = '0.0.6'
 
     pytest.param
 
-    assert version == sampiclyser.__version__
+    assert version == sampiclyserversion
