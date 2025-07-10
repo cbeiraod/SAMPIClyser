@@ -1292,7 +1292,7 @@ def reorder_circular_samples_with_trigger(
     trig_arr: np.ndarray,
     samp_arr: np.ndarray,
     reorder_samples: bool,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Rotate a circular buffer so that the contiguous trigger block (1s) appears at the end.
 
@@ -1319,7 +1319,8 @@ def reorder_circular_samples_with_trigger(
     samp_arr : ndarray, shape (N,)
         Sample values corresponding to each position in `trig_arr`.
     reorder_samples : bool
-        Whether to reorder the sample array or keep it as originally presented
+        If True, rotate `samp_arr` identically to `trig_arr`; if False, leave
+        `samp_arr` unchanged.
 
     Returns
     -------
@@ -1327,8 +1328,11 @@ def reorder_circular_samples_with_trigger(
         The trigger array rotated so that its contiguous 1s occupy the final
         positions of the array.
     samp_reordered : ndarray, shape (N,)
-        The sample array, optionally rotated identically to `trig_arr` to maintain
-        value-trigger correspondence.
+        The sample array, either rotated in lock-step (if `reorder_samples`)
+        or returned unchanged.
+    start_indicator : ndarray of int (0 or 1), shape (N,)
+        All zeros except a single 1 at the index where the first trigger‐sample
+        appears in the reordered buffer (i.e. the start of the 1‐block).
 
     Raises
     ------
@@ -1341,11 +1345,13 @@ def reorder_circular_samples_with_trigger(
     --------
     >>> trig = np.array([0, 0, 1, 1, 0, 0])
     >>> samp = np.arange(6)
-    >>> t_new, s_new = reorder_circular_samples_with_trigger(trig, samp)
+    >>> t_new, s_new, start_mask = reorder_circular_samples_with_trigger(trig, samp)
     >>> t_new
     array([0, 0, 0, 0, 1, 1])
     >>> s_new
     array([4, 5, 0, 1, 2, 3])
+    >>> start_mask
+    array([0, 0, 1, 0, 0, 0])
     """
     # Basic validation
     if trig_arr.ndim != 1 or samp_arr.ndim != 1:
@@ -1385,8 +1391,13 @@ def reorder_circular_samples_with_trigger(
 
     # Positive shift in np.roll moves elements right
     trig_reordered = np.roll(trig_arr, shift)
+
+    # Build the one‐hot start‐indicator
+    start_indicator = np.zeros(n, dtype=int)
+    start_indicator[shift] = 1
+
     if reorder_samples:
         samp_reordered = np.roll(samp_arr, shift)
-        return trig_reordered, samp_reordered
+        return trig_reordered, samp_reordered, start_indicator
     else:
-        return trig_reordered, samp_arr
+        return trig_reordered, samp_arr, start_indicator

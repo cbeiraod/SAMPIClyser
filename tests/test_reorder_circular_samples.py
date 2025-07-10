@@ -42,27 +42,33 @@ def sample_mismatch():
 
 def test_linear_run_reorder(sample_linear):
     trig, samp = sample_linear
-    trig_out, samp_out = reorder_circular_samples_with_trigger(trig, samp, reorder_samples=True)
+    trig_out, samp_out, start_mask = reorder_circular_samples_with_trigger(trig, samp, reorder_samples=True)
     # The block of ones [1,1] moves to end
     assert np.array_equal(trig_out, [0, 0, 0, 0, 1, 1])
     # Samples shifted identically
     assert np.array_equal(samp_out, np.roll(samp, 2))
+    # Start Mask correctly computed
+    assert np.array_equal(start_mask, [0, 0, 1, 0, 0, 0])
 
 
 def test_linear_run_no_reorder_samples(sample_linear):
     trig, samp = sample_linear
-    trig_out, samp_out = reorder_circular_samples_with_trigger(trig, samp, reorder_samples=False)
+    trig_out, samp_out, start_mask = reorder_circular_samples_with_trigger(trig, samp, reorder_samples=False)
     # Trigger reordered but samples unchanged
     assert np.array_equal(trig_out, [0, 0, 0, 0, 1, 1])
     assert np.array_equal(samp_out, samp)
+    # Start Mask correctly computed
+    assert np.array_equal(start_mask, [0, 0, 1, 0, 0, 0])
 
 
 def test_wrap_run_reorder(sample_wrap):
     trig, samp = sample_wrap
-    trig_out, samp_out = reorder_circular_samples_with_trigger(trig, samp, reorder_samples=True)
+    trig_out, samp_out, start_mask = reorder_circular_samples_with_trigger(trig, samp, reorder_samples=True)
     # Wrap block of ones placed at end
     assert np.array_equal(trig_out, [0, 0, 0, 1, 1])
     assert np.array_equal(samp_out, np.roll(samp, -1))
+    # Start Mask correctly computed
+    assert np.array_equal(start_mask, [0, 0, 0, 0, 1])
 
 
 def test_no_ones_raises(sample_no_ones):
