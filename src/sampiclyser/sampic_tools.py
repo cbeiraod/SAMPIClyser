@@ -26,6 +26,8 @@ import math
 import struct
 from collections import Counter
 from pathlib import Path
+from typing import Any
+from typing import Dict
 from typing import Iterator
 from typing import Optional
 from typing import Sequence
@@ -1401,3 +1403,158 @@ def reorder_circular_samples_with_trigger(
         return trig_reordered, samp_reordered, start_indicator
     else:
         return trig_reordered, samp_arr, start_indicator
+
+
+def plot_waveform(
+    ax: plt.Axes,
+    hid: int,
+    channel: int,
+    baseline: float,
+    samp_arr: np.ndarray,
+    trig_arr: np.ndarray,
+    period: float,
+    color: Any,
+    interp_kwargs: Dict[str, Any],
+    label_channel: bool,
+    label_hit: bool,
+    reorder_circular_buffer: bool,
+    reorder_samp_arr: bool,
+    plot_sample_types: bool,
+    plot_buffer_start: bool,
+    explicit_labels: bool,
+    time_scale: float,
+) -> None:
+    """
+    Plot a single SAMPIC waveform on the given Axes, with optional interpolation,
+    buffer reordering, and differentiated markers for sample types.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The axes to draw on.
+    hid : int
+        Hit index (used when `plot_single_channel=True` to label each hit).
+    channel : int
+        SAMPIC channel number (used in legend when `plot_single_channel=False`).
+    baseline : float
+        Baseline offset to add back to interpolated samples.
+    samp_arr : ndarray of float, shape (N,)
+        Raw ADC sample values.
+    trig_arr : ndarray of {0,1}, shape (N,)
+        Trigger markers, with a contiguous block of 1s (possibly wrapping).
+    period : float
+        Time interval between samples in seconds.
+    color : any
+        Matplotlib color spec (e.g. “C0”, RGB tuple, etc.).
+    interp_kwargs : dict
+        Keyword arguments for `apply_interpolation_method`, including:
+        - 'interpolation_method': {'sinc','hann','hamming','lanczos','resample','resample_poly'}
+        - 'interpolation_factor': int >=1
+        - 'interpolation_parameter': method-specific int
+    label_channel : bool
+        If True, legend labels read “Channel {channel}”.
+    label_hit : bool
+        If True, legend labels read “Hit {hid}”.
+    reorder_circular_buffer : bool
+        If True, rotate `trig_arr` (and optionally `samp_arr`) so trigger block
+        appears at the end.
+    reorder_samp_arr : bool
+        If `reorder_circular_buffer` is True, also rotate `samp_arr`.
+    plot_sample_types : bool
+        If True, uses separate markers for (non-trigger), (trigger), and
+        (buffer start) samples. If False, plots all samples as dots.
+    plot_buffer_start : bool
+        If plotting sample types, plot a distinct marker ('>') at the true
+        buffer-start position (from reordering).
+    explicit_labels : bool
+        If True, explicitly add labels for the different marker types
+    time_scale : float
+        Scale to be applied to the time axis before plotting
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    ValueError
+        If array lengths differ, or if `trig_arr` is not 1D or contains no 1s.
+        Passes through errors from `apply_interpolation_method` or
+        `reorder_circular_samples_with_trigger`.
+
+    Notes
+    -----
+    - Marker sizes are squared values (`s=marker_size**2`) for clarity.
+    """
+    # --- Input validation ---
+    n = trig_arr.size
+    if not (samp_arr.ndim == trig_arr.ndim == 1 and samp_arr.size == n):
+        raise ValueError("samp_arr, and trig_arr must be 1D arrays of equal length")
+
+    # --- Optional circular reordering ---
+    if reorder_circular_buffer:
+        trig_shifted, samp_shifted, start_mask = reorder_circular_samples_with_trigger(trig_arr, samp_arr, reorder_samp_arr)
+        start_mask = start_mask == 1
+    else:
+        trig_shifted = trig_arr
+        samp_shifted = samp_arr
+        start_mask = np.zeros(n, dtype=bool)
+        start_mask[0] = True
+
+    # --- Built time array for plotting ---
+    t_orig = np.arange(n, dtype=float) * period
+
+    # --- Interpolation & line plot ---
+    method = interp_kwargs.get("interpolation_method")
+    if method:
+        t_intp, y_intp = apply_interpolation_method(x_orig=t_orig, y_orig=samp_shifted, period=period, offset=baseline, **interp_kwargs)
+        if label_channel and label_hit:
+            label = f"Hit {hid} - Channel {channel}"
+        elif label_hit:
+            label = f"Hit {hid}"
+        elif label_channel:
+            label = f"Channel {channel}"
+        else:
+            label = None
+        ax.plot(t_intp * time_scale, y_intp, color=color, label=label)
+
+    # --- Scatter markers ---
+    if plot_sample_types:
+        # Buffer start marker
+        if plot_buffer_start:
+            ax.scatter(
+                t_orig[start_mask] * time_scale,
+                samp_shifted[start_mask],
+                marker=">",
+                s=10**2,
+                color=color,
+                label="Buffer start" if explicit_labels else None,
+            )
+            # Exclude buffer start when determining other masks
+            mask_trigger = (trig_shifted == 1) & ~start_mask
+            mask_sample = (trig_shifted == 0) & ~start_mask
+        else:
+            mask_trigger = trig_shifted == 1
+            mask_sample = ~mask_trigger
+
+        # Non-trigger samples
+        ax.scatter(
+            t_orig[mask_sample] * time_scale,
+            samp_shifted[mask_sample],
+            marker=".",
+            s=6**2,
+            color=color,
+            label="Hit samples" if explicit_labels else None,
+        )
+        # Trigger samples
+        ax.scatter(
+            t_orig[mask_trigger] * time_scale,
+            samp_shifted[mask_trigger],
+            marker="x",
+            s=8**2,
+            color=color,
+            label="Trigger" if explicit_labels else None,
+        )
+    else:
+        # All samples as dots
+        ax.scatter(t_orig * time_scale, samp_shifted, marker=".", s=6**2, color=color, label=None)
