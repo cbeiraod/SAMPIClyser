@@ -4,6 +4,7 @@ Changelog
 Current (2025-07-10)
 --------------------
 
+* Added helper function to add finishing touches to the legends of waveform plots
 * Added helper function to plot single waveforms
 * Added function to reorganize the samples from the circular buffer
 * Added function to yield selected waveforms based on channel and sequential hit position

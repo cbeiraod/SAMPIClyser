@@ -46,9 +46,12 @@ import pyarrow.dataset as ds
 # import pyarrow.ipc as ipc
 import pyarrow.parquet as pq
 import uproot
+from matplotlib.axes import Axes
 from matplotlib.dates import AutoDateFormatter
 from matplotlib.dates import AutoDateLocator
+from matplotlib.lines import Line2D
 from matplotlib.ticker import FormatStrFormatter
+from natsort import natsorted
 from pyarrow import RecordBatch
 from scipy.signal import resample
 from scipy.signal import resample_poly
@@ -1558,3 +1561,100 @@ def plot_waveform(
     else:
         # All samples as dots
         ax.scatter(t_orig * time_scale, samp_shifted, marker=".", s=6**2, color=color, label=None)
+
+
+def finalize_waveform_legend(
+    ax: Axes,
+    label_channel: bool,
+    label_hit: bool,
+    plot_sample_types: bool,
+    plot_buffer_start: bool,
+    explicit_labels: bool,
+) -> None:
+    """
+    Clean up and draw one or two legends for waveform plots.
+
+    When only channel labels are shown (and not individual hits),
+    collapses duplicate “Channel N” entries, sorts them numerically,
+    and places them in the main legend.  Optionally, if `plot_sample_types`
+    is True *and* `explicit_labels` is False, a secondary legend is
+    drawn for the sample-type markers (buffer-start, hit-samples, trigger).
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The axes containing plotted lines and scatters.
+    label_channel : bool
+        Whether the plot includes “Channel N” labels.  If True and
+        `label_hit` is False, duplicate channel entries will be merged
+        and sorted.
+    label_hit : bool
+        Whether the plot includes “Hit M” labels.  Currently only used
+        to decide whether to collapse channel labels (i.e. collapse only
+        when `label_channel and not label_hit`).
+    plot_sample_types : bool
+        Whether the plot used separate markers for hit-samples and triggers.
+        If True and `explicit_labels` is False, a second legend is drawn
+        explaining those marker types.
+    plot_buffer_start : bool
+        Whether the plot included a special “buffer start” marker.  If so,
+        that entry is included in the secondary legend.
+    explicit_labels : bool
+        If True, assume that all scatter calls already set their own labels,
+        and do not auto-generate a secondary legend for sample types.
+
+    Returns
+    -------
+    None
+        This function operates in-place on the Axes, adding one or two legends.
+
+    Raises
+    ------
+    IndexError
+        If legend handle/label extraction finds no entries when sorting.
+    """
+    # Fetch existing handles & labels
+    handles_orig, labels_orig = ax.get_legend_handles_labels()
+
+    # 1) Possibly collapse & sort channel labels into main legend
+    main_loc = 'best'
+    if label_channel and not label_hit:
+        pairs = list(zip(labels_orig, handles_orig))
+        # Extract channel entries and sort by numeric suffix
+        channel_pairs = [p for p in pairs if p[0].startswith("Channel ")]
+        channel_sorted = natsorted(channel_pairs, key=lambda lh: int(lh[0].split()[-1]))
+        # Keep the last handle for each unique label
+        channel_dict = {lbl: hnd for lbl, hnd in channel_sorted}
+        sorted_channels = list(channel_dict.items())
+        # All other (non-channel) entries in original order
+        other = [p for p in pairs if not p[0].startswith("Channel ")]
+        if sorted_channels or other:
+            labels, handles = zip(*(sorted_channels + other))
+        else:
+            labels, handles = (), ()
+    else:
+        # Leave everything as originally labeled
+        handles, labels = handles_orig, labels_orig
+
+    # 2) Secondary legend for sample‐type markers
+    secondary = None
+    if plot_sample_types and not explicit_labels:
+        main_loc = 'upper right'
+        sec_handles = []
+        if plot_buffer_start:
+            sec_handles.append(Line2D([0], [0], color='black', marker='>', linestyle='None', label="Buffer start"))
+        sec_handles.extend(
+            [
+                Line2D([0], [0], color='black', marker='.', linestyle='None', label="Hit samples"),
+                Line2D([0], [0], color='black', marker='x', linestyle='None', label="Trigger"),
+            ]
+        )
+        secondary = ax.legend(handles=sec_handles, loc='upper left')
+
+    # 3) Draw main legend
+    # main_legend = ax.legend(handles, labels, loc=main_loc)
+    _ = ax.legend(handles, labels, loc=main_loc)
+
+    # 4) If we made a secondary one, keep it alive
+    if secondary is not None:
+        ax.add_artist(secondary)
