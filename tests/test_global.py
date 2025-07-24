@@ -27,7 +27,7 @@ import pytest
 def test_version():
     from sampiclyser import __version__ as sampiclyserversion
 
-    version = '0.0.6'
+    version = '0.0.7'
 
     pytest.param
 
