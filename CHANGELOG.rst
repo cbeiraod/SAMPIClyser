@@ -1,8 +1,13 @@
 Changelog
 =========
 
-Current (2025-07-10)
+Current (2025-09-11)
 --------------------
+
+* Fixed hints in the CLI
+
+0.0.7 (2024-07-24)
+------------------
 
 * Added helper function to add finishing touches to the legends of waveform plots
 * Added helper function to plot single waveforms

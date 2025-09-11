@@ -261,7 +261,7 @@ def plot_hit_rate(
     title: str,
 ):
     """
-    Plot hit rate vs. time from a decoded SAMPIC run file.
+    Plot hit rate vs time from a decoded SAMPIC run file.
     """
 
     fig = sampiclyser.plot_hit_rate(
@@ -381,7 +381,7 @@ def plot_channel_hit_rate(
     title: str,
 ):
     """
-    Plot hit rate of a specific SAMPIC channel vs. time from a decoded SAMPIC run file.
+    Plot hit rate of a specific SAMPIC channel vs time from a decoded SAMPIC run file.
     """
 
     fig = sampiclyser.plot_channel_hit_rate(
