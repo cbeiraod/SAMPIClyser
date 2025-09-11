@@ -417,7 +417,8 @@ def plot_channel_hit_rate(
 @click.argument('output_file', type=click.Path(exists=False, path_type=Path))
 def generate_example_hitmap_config(output_file):
     """
-    Generate an example YAML configuration file describing the setup, necessary for hitmap plotting
+    Generate an example configuration file describing the setup, necessary for hitmap plotting.
+    Prefer using YAML files
     """
     example_file_data = dict(
         plot_layout=(1, 2),
@@ -454,6 +455,7 @@ def generate_example_hitmap_config(output_file):
                 global_flip=True,
             ),
         ),
+        sensor_order=["sensor1_name", "sensor2_name"],
     )
 
     extension = output_file.suffix.lower()
@@ -469,3 +471,160 @@ def generate_example_hitmap_config(output_file):
             yaml.dump(example_file_data, outfile, default_flow_style=False)
     else:
         print(f"Unknown config file extension: {extension}")
+
+
+@cli.command()
+@click.argument('decoded_file', type=click.Path(exists=True, path_type=Path))
+@click.argument('config_file', type=click.Path(exists=True, path_type=Path))
+@click.option('--output', '-o', type=click.Path(), help='Path to save the plot image')
+@click.option(
+    '--root-tree',
+    'root_tree',
+    type=str,
+    default="sampic_hits",
+    help='The name of the root ttree under which to save the hit data. Default: sampic_hits',
+)
+@click.option(
+    '--title',
+    '-t',
+    'title',
+    type=str,
+    default=None,
+    help='The plot title to put at the top of the figure. Default: None',
+)
+@click.option(
+    '--fig-width',
+    'fig_width',
+    type=float,
+    default=15,
+    help='The width of the plot. Default: 15',
+)
+@click.option(
+    '--fig-height',
+    'fig_height',
+    type=float,
+    default=9,
+    help='The height of the plot. Default: 9',
+)
+@click.option(
+    '--omit-sampic-ch',
+    'omit_sampic_ch',
+    is_flag=True,
+    help='If set, the SAMPIC channel number will not be printed on top of the drawn channel in the hitmap.',
+)
+@click.option(
+    '--omit-board-ch',
+    'omit_board_ch',
+    is_flag=True,
+    help='If set, the SAMPIC channel number will not be printed on top of the drawn channel in the hitmap.',
+)
+@click.option(
+    '--coordinates',
+    'coordinates',
+    type=str,
+    default="local",
+    help='Which coordinate system to use when drawing the hitmaps, valid options are local and global. Default: local',
+)
+@click.option('--logz', 'log_z', is_flag=True, help='Enable logarithmic z axis')
+@click.option(
+    '--color-map',
+    'color_map',
+    type=str,
+    default="viridis",
+    help='The color map to use for coloring the hit count, see matplotlib colormaps for valid options. Default: viridis',
+)
+@click.option(
+    '--fontsize',
+    'fontsize',
+    type=float,
+    default=14,
+    help='The size of the font used to write channel numbers at the center of each pixel. Default: 14',
+)
+def plot_hitmap(
+    decoded_file: Path,
+    config_file: Path,
+    output: Path,
+    root_tree: str,
+    title: str,
+    fig_width: float,
+    fig_height: float,
+    omit_sampic_ch: bool,
+    omit_board_ch: bool,
+    coordinates: str,
+    log_z: bool,
+    color_map: str,
+    fontsize: float,
+):
+    """
+    Plot a 2D hitmap of sensor hits from data.
+    """
+    from sampiclyser.sensor_hitmaps import SensorSpec
+
+    extension = config_file.suffix.lower()
+    if extension in [".json"]:
+        import json
+
+        with open(config_file, 'r') as infile:
+            config_data = json.load(infile)
+    elif extension in [".yml", ".yaml"]:
+        import yaml
+
+        with open(config_file, 'r') as infile:
+            config_data = yaml.load(infile, yaml.Loader)
+    else:
+        print(f"Unknown config file extension: {extension}")
+
+    layout = config_data["plot_layout"]
+    sensor_types = config_data["sensor_types"]
+    sensor_order = config_data["sensor_order"]
+    sensors = config_data["sensor_specifications"]
+
+    sensor_specs = []
+    for sensor_name in sensor_order:
+        if sensor_name not in sensors:
+            raise RuntimeError(f"Sensor {sensor_name} defined in the order but not in the specifications")
+        sensor_type = sensors[sensor_name]["sensor_type"]
+        if sensor_type not in sensor_types:
+            raise RuntimeError(f"Could not find the sensor type {sensor_type} in the list of defined sensor types")
+
+        sensor_geometry = ()
+        sensor_type = sensor_types[sensor_type]
+        if sensor_type["geometry_type"] in ["grouped", "scatter"]:
+            sensor_geometry = (sensor_type["geometry_type"], sensor_type['ch_to_coords'], sensor_type['rows'], sensor_type['cols'])
+        elif sensor_type["geometry_type"] in ["grid"]:
+            sensor_geometry = (sensor_type["geometry_type"], sensor_type['rows'], sensor_type['cols'], sensor_type['ch_to_coords'])
+        else:
+            raise RuntimeError(f"Unknown sensor spec type: {sensor_type['geometry_type']}")
+
+        sensor_specs.append(
+            SensorSpec(
+                name=sensor_name,
+                sampic_map=sensors[sensor_name]["datach_to_sensorch"],
+                geometry=sensor_geometry,
+                cmap=color_map,
+                global_rotation_units=sensors[sensor_name]["global_90rotationUnits"],
+                global_flip=sensors[sensor_name]["global_flip"],
+            )
+        )
+        print(sensors[sensor_name]["global_90rotationUnits"])
+
+    hit_summary = sampiclyser.get_channel_hits(file_path=decoded_file, root_tree=root_tree)
+
+    fig = sampiclyser.plot_hitmap(
+        summary_df=hit_summary,
+        specs=sensor_specs,
+        layout=layout,
+        figsize=(fig_width, fig_height),
+        cmap=color_map,
+        log_z=log_z,
+        title=title,
+        do_sampic_ch=not omit_sampic_ch,
+        do_board_ch=not omit_board_ch,
+        center_fontsize=fontsize,
+        coordinates=coordinates,
+    )
+
+    if output:
+        fig.savefig(output)
+    else:
+        plt.show()
