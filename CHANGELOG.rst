@@ -4,6 +4,8 @@ Changelog
 Current (2025-09-11)
 --------------------
 
+* Added a utility to generate an example config file for the hitmap generation
+* Added a new entry point for the sampiclyser utilities, everything that is not directly related to analysing the data but required for it
 * Fixed hints in the CLI
 
 0.0.7 (2024-07-24)
