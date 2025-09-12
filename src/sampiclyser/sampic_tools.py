@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 from typing import Dict
 from typing import Iterator
+from typing import List
 from typing import Optional
 from typing import Sequence
 from typing import Set
@@ -1658,3 +1659,150 @@ def finalize_waveform_legend(
     # 4) If we made a secondary one, keep it alive
     if secondary is not None:
         ax.add_artist(secondary)
+
+
+# Original taken from: https://stackoverflow.com/a/20007730
+# Then updated with docstring by me and minor tweaks
+def ordinal(n: int) -> str:
+    """
+    Convert an integer to its English ordinal string (e.g., 1 → "1st").
+    Original function from https://stackoverflow.com/a/20007730, then adjusted with minor tweaks
+
+    Parameters
+    ----------
+    n : int
+        The integer to convert.
+
+    Returns
+    -------
+    str
+        The integer followed by its ordinal suffix:
+        "st" for numbers ending in 1,
+        "nd" for numbers ending in 2,
+        "rd" for numbers ending in 3,
+        and "th" otherwise. Special cases 11, 12, and 13 all use "th".
+
+    Notes
+    -----
+    - English ordinals use "th" for the teens (11, 12, 13), even though they end in 1-3.
+    - For all other numbers, the suffix is chosen by the last digit:
+      1→"st", 2→"nd", 3→"rd", otherwise "th".
+    - This simple list-based lookup (with `min(n % 10, 4)`) is a common Python recipe.
+    """
+    if 11 <= (n % 100) <= 13:
+        suffix = "th"
+    else:
+        suffix = ["th", "st", "nd", "rd", "th"][min(n % 10, 4)]
+    return f"{n}{suffix}"
+
+
+def set_waveform_titles_and_labels(
+    ax: Axes,
+    file_path: Path,
+    file_name_id: Optional[str] = None,
+    title: Optional[str] = None,
+    channel_filter: Optional[List[int]] = None,
+    first_hit: int = 0,
+    hits_plotted: int = 1,
+    time_scale: float = 1.0,
+) -> None:
+    """
+    Set the main title and axis labels for a waveform plot.
+
+    If `title` is provided, it is used verbatim. Otherwise an automatic
+    title is constructed based on `file_name_id`, which run hit range,
+    and optionally a channel filter.
+
+    The x-axis label is set to “Time […]” with units chosen from
+    the `time_scale` (s, ms, µs, ns, ps).  The y-axis is always labeled
+    “Voltage [V]”.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The Axes object on which to set titles and labels.
+    file_path : pathlib.Path
+        Path of the source data file; used to default `file_name_id`.
+    file_name_id : str or None, optional
+        Short identifier for the file (e.g. filename without path).
+        If None or empty, defaults to `file_path.name`.
+    title : str or None, optional
+        If provided, this exact string is set as the plot title.  If None,
+        an automatic title is generated.
+    channel_filter : list of int or None, optional
+        If plotting only a subset of channels, used to annotate the title:
+        - Single-element list → “Channel N”
+        - Multi-element list  → “Selected Channel”
+    first_hit : int, default 0
+        Index of the first hit plotted (0-based).  Used in automatic title
+        when `title` is None.
+    hits_plotted : int, default 1
+        Number of hits actually drawn.  Used in automatic title when
+        `title` is None.
+    time_scale : float, default 1.0
+        Factor applied to the “time” values before labeling and tick formatting.
+        Must be one of [1, 1e3, 1e6, 1e9, 1e12], corresponding to
+        seconds, milliseconds, microseconds, nanoseconds, and picoseconds.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    RuntimeError
+        If `time_scale` is not one of the recognized values.
+
+    Examples
+    --------
+    >>> fig, ax = plt.subplots()
+    >>> set_waveform_titles_and_labels(
+    ...     ax,
+    ...     Path("/data/run123"),
+    ...     file_name_id="run123",
+    ...     title=None,
+    ...     channel_filter=[2],
+    ...     first_hit=5,
+    ...     hits_plotted=10,
+    ...     time_scale=1e6
+    ... )
+    """
+    auto = title is None
+
+    if not file_name_id:
+        file_name_id = file_path.name
+
+    if auto:
+        qualifier = ""
+        if channel_filter is not None:
+            if len(channel_filter) == 1:
+                qualifier = f" Channel {channel_filter[0]}"
+            else:
+                qualifier = " Selected Channels"
+
+        if first_hit == 0:
+            prefix = f"First {hits_plotted}"
+            suffix = ""
+        else:
+            prefix = f"{hits_plotted} sequential"
+            suffix = f" after {ordinal(first_hit)} hit"
+
+        ax.set_title(f"{prefix}{qualifier} Waveforms from {file_name_id}{suffix}", pad=12, weight="bold")
+    else:
+        ax.set_title(title, pad=12, weight="bold")
+
+    # Determine time units
+    units_map = {
+        1.0: "s",
+        1e3: "ms",
+        1e6: "µs",
+        1e9: "ns",
+        1e12: "ps",
+    }
+    try:
+        units = units_map[time_scale]
+    except KeyError:
+        raise RuntimeError(f"Unknown time scale: {time_scale}")
+
+    ax.set_xlabel(f"Time [{units}]")
+    ax.set_ylabel("Voltage [V]")
