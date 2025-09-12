@@ -28,13 +28,14 @@ from typing import Sequence
 from typing import Tuple
 
 import matplotlib.pyplot as plt
-import mplhep as hep
 import numpy as np
 import pandas as pd
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import LogNorm
 from matplotlib.colors import Normalize
 from matplotlib.patches import Rectangle
+
+from sampiclyser.sampic_tools import sampiclyser_style
 
 
 @dataclass
@@ -566,7 +567,7 @@ def plot_hitmap(
 
     Notes
     -----
-    - Uses `mplhep.style.CMS` for CMS-style formatting.
+    - Uses sampiclyser_style for style formatting.
     - A single colorbar is added to the first subplot, reflecting all panels.
     - Subplot aspect is set to 'equal' so that pixels are not distorted.
     """
@@ -577,89 +578,89 @@ def plot_hitmap(
     vmax = all_vals.max() if all_vals.size > 0 else 1
     norm = LogNorm(vmin=vmin, vmax=vmax) if log_z else Normalize(vmin=0, vmax=vmax)
 
-    plt.style.use(hep.style.CMS)
-    nrows, ncols = layout
-    # Create figure and axes first, then apply title
-    fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False, constrained_layout=True)
-    if title:
-        fig.suptitle(title, weight='bold')
+    with plt.style.use(sampiclyser_style):
+        nrows, ncols = layout
+        # Create figure and axes first, then apply title
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False, constrained_layout=True)
+        if title:
+            fig.suptitle(title, weight='bold')
 
-    if coordinates == "local":
-        fig.text(
-            1,
-            1,  # (x, y) in figure coords
-            "(Local sensor coordinates)",  # the string
-            ha='right',  # align right edge
-            va='top',  # align top edge
-            transform=fig.transFigure,  # figure coordinate system
-            fontsize=10,
-        )
-    elif coordinates == "global":
-        fig.text(
-            1,
-            1,  # (x, y) in figure coords
-            "(Downstream global coordinates)",  # the string
-            ha='right',  # align right edge
-            va='top',  # align top edge
-            transform=fig.transFigure,  # figure coordinate system
-            fontsize=10,
-        )
-    else:
-        raise ValueError(f"Unknown coordinate system {coordinates}")
-
-    first_img = None
-    for ax, spec in zip(axes.flat, specs):
-        geom = spec.geometry[0]
-        if geom == "grid":
-            im = _plot_grid_sensor(
-                ax,
-                spec,
-                hits_by_chan,
-                norm,
-                do_sampic_ch=do_sampic_ch,
-                do_board_ch=do_board_ch,
-                center_fontsize=center_fontsize,
-                coordinates=coordinates,
+        if coordinates == "local":
+            fig.text(
+                1,
+                1,  # (x, y) in figure coords
+                "(Local sensor coordinates)",  # the string
+                ha='right',  # align right edge
+                va='top',  # align top edge
+                transform=fig.transFigure,  # figure coordinate system
+                fontsize=10,
             )
-        elif geom == "grouped":
-            im = _plot_grouped_sensor(
-                ax,
-                spec,
-                hits_by_chan,
-                norm,
-                do_sampic_ch=do_sampic_ch,
-                do_board_ch=do_board_ch,
-                center_fontsize=center_fontsize,
-                coordinates=coordinates,
-            )
-        elif geom == "scatter":
-            im = _plot_scatter_sensor(
-                ax,
-                spec,
-                hits_by_chan,
-                norm,
-                do_sampic_ch=do_sampic_ch,
-                do_board_ch=do_board_ch,
-                center_fontsize=center_fontsize,
-                coordinates=coordinates,
+        elif coordinates == "global":
+            fig.text(
+                1,
+                1,  # (x, y) in figure coords
+                "(Downstream global coordinates)",  # the string
+                ha='right',  # align right edge
+                va='top',  # align top edge
+                transform=fig.transFigure,  # figure coordinate system
+                fontsize=10,
             )
         else:
-            raise ValueError(f"Unknown geometry {geom}")
-        ax.set_title(spec.name, pad=8)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        if first_img is None and im is not None:
-            first_img = im
+            raise ValueError(f"Unknown coordinate system {coordinates}")
 
-    for ax in axes.flat[len(specs) :]:
-        ax.axis("off")
-    if first_img:
-        mappable = ScalarMappable(norm=norm, cmap=cmap)
-        mappable.set_array([])
-        fig.colorbar(mappable, ax=axes, orientation='vertical', label='Hits')
-        # fig.colorbar(first_img, ax=axes, orientation="vertical", label="Hits")
-    else:
-        mappable = ScalarMappable(norm=norm, cmap=cmap)
-        mappable.set_array([])
-        fig.colorbar(mappable, ax=axes, orientation='vertical', label='Hits')
-    return fig
+        first_img = None
+        for ax, spec in zip(axes.flat, specs):
+            geom = spec.geometry[0]
+            if geom == "grid":
+                im = _plot_grid_sensor(
+                    ax,
+                    spec,
+                    hits_by_chan,
+                    norm,
+                    do_sampic_ch=do_sampic_ch,
+                    do_board_ch=do_board_ch,
+                    center_fontsize=center_fontsize,
+                    coordinates=coordinates,
+                )
+            elif geom == "grouped":
+                im = _plot_grouped_sensor(
+                    ax,
+                    spec,
+                    hits_by_chan,
+                    norm,
+                    do_sampic_ch=do_sampic_ch,
+                    do_board_ch=do_board_ch,
+                    center_fontsize=center_fontsize,
+                    coordinates=coordinates,
+                )
+            elif geom == "scatter":
+                im = _plot_scatter_sensor(
+                    ax,
+                    spec,
+                    hits_by_chan,
+                    norm,
+                    do_sampic_ch=do_sampic_ch,
+                    do_board_ch=do_board_ch,
+                    center_fontsize=center_fontsize,
+                    coordinates=coordinates,
+                )
+            else:
+                raise ValueError(f"Unknown geometry {geom}")
+            ax.set_title(spec.name, pad=8)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            if first_img is None and im is not None:
+                first_img = im
+
+        for ax in axes.flat[len(specs) :]:
+            ax.axis("off")
+        if first_img:
+            mappable = ScalarMappable(norm=norm, cmap=cmap)
+            mappable.set_array([])
+            fig.colorbar(mappable, ax=axes, orientation='vertical', label='Hits')
+            # fig.colorbar(first_img, ax=axes, orientation="vertical", label="Hits")
+        else:
+            mappable = ScalarMappable(norm=norm, cmap=cmap)
+            mappable.set_array([])
+            fig.colorbar(mappable, ax=axes, orientation='vertical', label='Hits')
+        return fig
