@@ -188,7 +188,7 @@ def plot_channel_hits(
     df: pd.DataFrame,
     first_channel: int,
     last_channel: int,
-    cms_label: str = "PPS",
+    label: str = "PPS",
     log_y: bool = False,
     figsize: tuple[float, float] = (6, 4),
     rlabel: str = "(13 TeV)",
@@ -209,8 +209,8 @@ def plot_channel_hits(
         Lowest channel index to include on the x-axis.
     last_channel : int
         Highest channel index to include on the x-axis.
-    cms_label : str, optional
-        Text label for the CMS experiment (default: "PPS").
+    label : str, optional
+        Text label for the experiment (default: "PPS").
     log_y : bool, optional
         If True, use a logarithmic y-axis (default: False).
     figsize : tuple of float, optional
@@ -240,8 +240,8 @@ def plot_channel_hits(
     - Channels missing from `df` are shown with zero hits.
     - In linear mode, y-axis tick labels are formatted in uppercase scientific
       notation (e.g. "4.0E6").
-    - The plot uses `mplhep.style.CMS` with `cms_label` and `rlabel` positioned
-      according to CMS styling conventions.
+    - The plot uses `mplhep.style.*` with `label` and `rlabel` positioned
+      according to respective styling conventions.
     - The `is_data` flag controls the “Data” vs. “Simulation” annotation.
     """
     # Build the full channel range and corresponding hit counts (0 if missing)
@@ -249,37 +249,43 @@ def plot_channel_hits(
     hits_map = dict(zip(df["Channel"], df["Hits"]))
     counts = [hits_map.get(ch, 0) for ch in channels]
 
-    # Apply CMS style from mplhep
-    plt.style.use(hep.style.CMS)
+    # Apply selected sampiclyser style from mplhep
+    global sampiclyser_style
+    with plt.style.use(sampiclyser_style):
+        # Create figure and axis with custom size and create the bar histogram
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.bar(channels, counts, align='center', width=1.0, edgecolor='black', color=color)
 
-    # Create figure and axis with custom size and create the bar histogram
-    fig, ax = plt.subplots(figsize=figsize)
-    ax.bar(channels, counts, align='center', width=1.0, edgecolor='black', color=color)
+        # label with customizable right text
+        if sampiclyser_style == hep.style.CMS:
+            hep.cms.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        elif sampiclyser_style in [hep.style.ATLAS, hep.style.ATLAS1, hep.style.ATLAS2]:
+            hep.atlas.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        elif sampiclyser_style in [hep.style.LHCb1, hep.style.LHCb2]:
+            hep.lhcb.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        elif sampiclyser_style in [hep.style.DUNE, hep.style.DUNE1]:
+            hep.dune.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
 
-    # CMS label with customizable right text
-    hep.cms.label(cms_label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        # Optional main title
+        if title:
+            ax.set_title(title, pad=12, weight="bold")
 
-    # Optional main title
-    if title:
-        ax.set_title(title, pad=12, weight="bold")
+        # Y-axis scale and formatting
+        if log_y:
+            ax.set_yscale('log')
+        else:
+            # scientific notation for linear scale
+            ax.yaxis.set_major_formatter(FormatStrFormatter('%.1E'))
 
-    # Y-axis scale and formatting
-    if log_y:
-        ax.set_yscale('log')
-    else:
-        # scientific notation for linear scale
-        ax.yaxis.set_major_formatter(FormatStrFormatter('%.1E'))
+        # Axis labels and limits
+        ax.set_xlabel("Channel")
+        ax.set_ylabel("Hits per Channel")
+        ax.set_xlim(first_channel - 0.5, last_channel + 0.5)
+        ax.set_xticks(channels)
 
-    # Axis labels and limits
-    ax.set_xlabel("Channel")
-    ax.set_ylabel("Hits per Channel")
-    ax.set_xlim(first_channel - 0.5, last_channel + 0.5)
-    ax.set_xticks(channels)
+        plt.tight_layout()
 
-    plt.tight_layout()
-    # plt.show()
-
-    return fig
+        return fig
 
 
 def decode_byte_metadata(byte_metadata: dict[bytes, bytes]) -> dict[str, object]:
@@ -542,7 +548,7 @@ def plot_hit_rate(  # noqa: max-complexity=22
     end_time: datetime.datetime | float | None = None,
     root_tree: str = "sampic_hits",
     scale_factor: float = 1.0,
-    cms_label: str = "PPS",
+    label: str = "PPS",
     log_y: bool = False,
     figsize: tuple[float, float] = (6, 4),
     rlabel: str = "(13 TeV)",
@@ -581,8 +587,8 @@ def plot_hit_rate(  # noqa: max-complexity=22
     scale_factor : float, optional
         Multiplier applied to each bin's count (e.g. to account for
         central trigger multiplicity) before plotting (default: 1.0).
-    cms_label : str, optional
-        CMS experiment label (default: `"PPS"`).
+    label : str, optional
+        experiment label (default: `"PPS"`).
     log_y : bool, optional
         If True, use a logarithmic y-axis (default: False).
     figsize : tuple of float, optional
@@ -670,44 +676,51 @@ def plot_hit_rate(  # noqa: max-complexity=22
     else:
         rates = np.array([counts[b] * scale_factor / bin_size for b in bins], dtype=int)
 
-    # Plot
-    plt.style.use(hep.style.CMS)
+    # Apply selected sampiclyser style from mplhep
+    global sampiclyser_style
+    with plt.style.use(sampiclyser_style):
+        # Create figure and axis with custom size and create the plot
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.step(dtimes, rates, where="mid", color=color)
 
-    # Create figure and axis with custom size and create the plot
-    fig, ax = plt.subplots(figsize=figsize)
-    ax.step(dtimes, rates, where="mid", color=color)
+        # label with customizable right text
+        if sampiclyser_style == hep.style.CMS:
+            hep.cms.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        elif sampiclyser_style in [hep.style.ATLAS, hep.style.ATLAS1, hep.style.ATLAS2]:
+            hep.atlas.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        elif sampiclyser_style in [hep.style.LHCb1, hep.style.LHCb2]:
+            hep.lhcb.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        elif sampiclyser_style in [hep.style.DUNE, hep.style.DUNE1]:
+            hep.dune.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
 
-    # CMS label with customizable right text
-    hep.cms.label(cms_label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        # Optional main title
+        if title:
+            ax.set_title(title, pad=12, weight="bold")
 
-    # Optional main title
-    if title:
-        ax.set_title(title, pad=12, weight="bold")
+        # Y-axis scale and formatting
+        if log_y:
+            ax.set_yscale('log')
 
-    # Y-axis scale and formatting
-    if log_y:
-        ax.set_yscale('log')
+        ax.set_xlabel("Time")
+        if plot_hits:
+            ax.set_ylabel(f"Hits per {bin_size:.1f} s")
+        else:
+            ax.set_ylabel("Hit Rate [Hz]")
 
-    ax.set_xlabel("Time")
-    if plot_hits:
-        ax.set_ylabel(f"Hits per {bin_size:.1f} s")
-    else:
-        ax.set_ylabel("Hit Rate [Hz]")
+        # date formatting
+        locator = AutoDateLocator()
+        formatter = AutoDateFormatter(locator)
+        ax.xaxis.set_major_locator(locator)
+        ax.xaxis.set_major_formatter(formatter)
 
-    # date formatting
-    locator = AutoDateLocator()
-    formatter = AutoDateFormatter(locator)
-    ax.xaxis.set_major_locator(locator)
-    ax.xaxis.set_major_formatter(formatter)
+        ax.set_xlim(dtimes[0], dtimes[-1])
 
-    ax.set_xlim(dtimes[0], dtimes[-1])
+        # format x-axis as dates
+        fig.autofmt_xdate()
 
-    # format x-axis as dates
-    fig.autofmt_xdate()
+        plt.tight_layout()
 
-    plt.tight_layout()
-
-    return fig
+        return fig
 
 
 def plot_channel_hit_rate(  # noqa: max-complexity=22
@@ -720,7 +733,7 @@ def plot_channel_hit_rate(  # noqa: max-complexity=22
     end_time: datetime.datetime | float | None = None,
     root_tree: str = "sampic_hits",
     scale_factor: float = 1.0,
-    cms_label: str = "PPS",
+    label: str = "PPS",
     log_y: bool = False,
     figsize: tuple[float, float] = (6, 4),
     rlabel: str = "(13 TeV)",
@@ -761,8 +774,8 @@ def plot_channel_hit_rate(  # noqa: max-complexity=22
     scale_factor : float, optional
         Multiplier applied to each bin's count (e.g. to account for
         central trigger multiplicity) before plotting (default: 1.0).
-    cms_label : str, optional
-        CMS experiment label (default: `"PPS"`).
+    label : str, optional
+        experiment label (default: `"PPS"`).
     log_y : bool, optional
         If True, use a logarithmic y-axis (default: False).
     figsize : tuple of float, optional
@@ -862,44 +875,51 @@ def plot_channel_hit_rate(  # noqa: max-complexity=22
     else:
         rates = np.array([counts[b] * scale_factor / bin_size for b in bins], dtype=int)
 
-    # Plot
-    plt.style.use(hep.style.CMS)
+    # Apply selected sampiclyser style from mplhep
+    global sampiclyser_style
+    with plt.style.use(sampiclyser_style):
+        # Create figure and axis with custom size and create the plot
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.step(dtimes, rates, where="mid", color=color)
 
-    # Create figure and axis with custom size and create the plot
-    fig, ax = plt.subplots(figsize=figsize)
-    ax.step(dtimes, rates, where="mid", color=color)
+        # label with customizable right text
+        if sampiclyser_style == hep.style.CMS:
+            hep.cms.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        elif sampiclyser_style in [hep.style.ATLAS, hep.style.ATLAS1, hep.style.ATLAS2]:
+            hep.atlas.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        elif sampiclyser_style in [hep.style.LHCb1, hep.style.LHCb2]:
+            hep.lhcb.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        elif sampiclyser_style in [hep.style.DUNE, hep.style.DUNE1]:
+            hep.dune.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
 
-    # CMS label with customizable right text
-    hep.cms.label(cms_label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        # Optional main title
+        if title:
+            ax.set_title(title, pad=12, weight="bold")
 
-    # Optional main title
-    if title:
-        ax.set_title(title, pad=12, weight="bold")
+        # Y-axis scale and formatting
+        if log_y:
+            ax.set_yscale('log')
 
-    # Y-axis scale and formatting
-    if log_y:
-        ax.set_yscale('log')
+        ax.set_xlabel("Time")
+        if plot_hits:
+            ax.set_ylabel(f"Channel {channel} hits per {bin_size:.1f} s")
+        else:
+            ax.set_ylabel(f"Channel {channel} hit Rate [Hz]")
 
-    ax.set_xlabel("Time")
-    if plot_hits:
-        ax.set_ylabel(f"Channel {channel} hits per {bin_size:.1f} s")
-    else:
-        ax.set_ylabel(f"Channel {channel} hit Rate [Hz]")
+        # date formatting
+        locator = AutoDateLocator()
+        formatter = AutoDateFormatter(locator)
+        ax.xaxis.set_major_locator(locator)
+        ax.xaxis.set_major_formatter(formatter)
 
-    # date formatting
-    locator = AutoDateLocator()
-    formatter = AutoDateFormatter(locator)
-    ax.xaxis.set_major_locator(locator)
-    ax.xaxis.set_major_formatter(formatter)
+        ax.set_xlim(dtimes[0], dtimes[-1])
 
-    ax.set_xlim(dtimes[0], dtimes[-1])
+        # format x-axis as dates
+        fig.autofmt_xdate()
 
-    # format x-axis as dates
-    fig.autofmt_xdate()
+        plt.tight_layout()
 
-    plt.tight_layout()
-
-    return fig
+        return fig
 
 
 def windowed_sinc_interpolation(t_orig: np.ndarray, y_orig: np.ndarray, t_new: np.ndarray, window: str = 'hann', M: int = 8) -> np.ndarray:
