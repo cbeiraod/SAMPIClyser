@@ -42,7 +42,7 @@ dependencies = [
 
 [project.scripts]
 sampiclyser = "sampiclyser.entry_points:cli"
-sampiclyser-utilities = "sampiclyser.entry_points:utilities"
+sampiclyser-utilities = "sampiclyser.utility_entry_points:utilities"
 sampiclyser-version = "sampiclyser.entry_points:version"
 sampic-convert = "sampiclyser.sampic_convert_script:decode"
 
