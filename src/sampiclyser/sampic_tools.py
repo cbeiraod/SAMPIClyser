@@ -1824,13 +1824,13 @@ def set_waveform_titles_and_labels(
                 qualifier = " Selected Channels"
 
         if first_hit == 0:
-            prefix = f"First {hits_plotted}"
+            prefix = f"First {hits_plotted}" if hits_plotted > 1 else "First"
             suffix = ""
         else:
-            prefix = f"{hits_plotted} sequential"
+            prefix = f"{hits_plotted} sequential" if hits_plotted > 1 else "One"
             suffix = f" after {ordinal(first_hit)} hit"
 
-        ax.set_title(f"{prefix}{qualifier} Waveforms from {file_name_id}{suffix}", pad=12, weight="bold")
+        ax.set_title(f"{prefix}{qualifier} Waveform{'' if hits_plotted == 1 else 's'} from {file_name_id}{suffix}", pad=12, weight="bold")
     else:
         ax.set_title(title, pad=12, weight="bold")
 
