@@ -30,6 +30,7 @@ from typing import Any
 from typing import Dict
 from typing import Iterator
 from typing import List
+from typing import Literal
 from typing import Optional
 from typing import Sequence
 from typing import Set
@@ -1462,8 +1463,7 @@ def plot_waveform(
     period: float,
     color: Any,
     interp_kwargs: Dict[str, Any],
-    label_channel: bool,
-    label_hit: bool,
+    label_mode: Literal['channel', 'hit', 'both', 'none'],
     reorder_circular_buffer: bool,
     reorder_samp_arr: bool,
     plot_sample_types: bool,
@@ -1498,10 +1498,12 @@ def plot_waveform(
         - 'interpolation_method': {'sinc','hann','hamming','lanczos','resample','resample_poly'}
         - 'interpolation_factor': int >=1
         - 'interpolation_parameter': method-specific int
-    label_channel : bool
-        If True, legend labels read “Channel {channel}”.
-    label_hit : bool
-        If True, legend labels read “Hit {hid}”.
+    label_mode : Literal
+        This controls how the waveforms are labelles:
+        - 'channel': label waveforms with the channel number
+        - 'hit': label waveforms with the hit id
+        - 'both': label waveforms with both channel number and hit id
+        - 'none': do not label waveforms
     reorder_circular_buffer : bool
         If True, rotate `trig_arr` (and optionally `samp_arr`) so trigger block
         appears at the end.
@@ -1555,11 +1557,11 @@ def plot_waveform(
     method = interp_kwargs.get("interpolation_method")
     if method:
         t_intp, y_intp = apply_interpolation_method(x_orig=t_orig, y_orig=samp_shifted, period=period, offset=baseline, **interp_kwargs)
-        if label_channel and label_hit:
+        if label_mode == "both":
             label = f"Hit {hid} - Channel {channel}"
-        elif label_hit:
+        elif label_mode == "hit":
             label = f"Hit {hid}"
-        elif label_channel:
+        elif label_mode == "channel":
             label = f"Channel {channel}"
         else:
             label = None
@@ -1609,8 +1611,7 @@ def plot_waveform(
 
 def finalize_waveform_legend(
     ax: Axes,
-    label_channel: bool,
-    label_hit: bool,
+    label_mode: Literal['channel', 'hit', 'both', 'none'],
     plot_sample_types: bool,
     plot_buffer_start: bool,
     explicit_labels: bool,
@@ -1628,14 +1629,20 @@ def finalize_waveform_legend(
     ----------
     ax : matplotlib.axes.Axes
         The axes containing plotted lines and scatters.
-    label_channel : bool
-        Whether the plot includes “Channel N” labels.  If True and
-        `label_hit` is False, duplicate channel entries will be merged
-        and sorted.
-    label_hit : bool
-        Whether the plot includes “Hit M” labels.  Currently only used
-        to decide whether to collapse channel labels (i.e. collapse only
-        when `label_channel and not label_hit`).
+    label_mode : Literal
+        This controls how the waveforms are labelles:
+        - 'channel': label waveforms with the channel number
+        - 'hit': label waveforms with the hit id
+        - 'both': label waveforms with both channel number and hit id
+        - 'none': do not label waveforms
+        label_channel : bool
+            Whether the plot includes “Channel N” labels.  If True and
+            `label_hit` is False, duplicate channel entries will be merged
+            and sorted.
+        label_hit : bool
+            Whether the plot includes “Hit M” labels.  Currently only used
+            to decide whether to collapse channel labels (i.e. collapse only
+            when `label_channel and not label_hit`).
     plot_sample_types : bool
         Whether the plot used separate markers for hit-samples and triggers.
         If True and `explicit_labels` is False, a second legend is drawn
@@ -1662,7 +1669,7 @@ def finalize_waveform_legend(
 
     # 1) Possibly collapse & sort channel labels into main legend
     main_loc = 'best'
-    if label_channel and not label_hit:
+    if label_mode == "channel":
         pairs = list(zip(labels_orig, handles_orig))
         # Extract channel entries and sort by numeric suffix
         channel_pairs = [p for p in pairs if p[0].startswith("Channel ")]
