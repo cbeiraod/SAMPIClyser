@@ -23,7 +23,7 @@
 
 from __future__ import annotations
 
-__version__ = '0.0.8'
+__version__ = '0.1.0'
 
 from .sampic_decoder import SAMPIC_Run_Decoder
 from .sampic_tools import get_channel_hits

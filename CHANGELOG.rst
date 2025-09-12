@@ -4,7 +4,12 @@ Changelog
 Current (2025-09-12)
 --------------------
 
+
+0.1.0 (2024-09-12)
+------------------
+
 * Fixed some bugs from previous release
+
 
 0.0.8 (2024-09-12)
 ------------------
@@ -18,6 +23,7 @@ Current (2025-09-12)
 * Added a utility to generate an example config file for the hitmap generation
 * Added a new entry point for the sampiclyser utilities, everything that is not directly related to analysing the data but required for it
 * Fixed hints in the CLI
+
 
 0.0.7 (2024-07-24)
 ------------------
