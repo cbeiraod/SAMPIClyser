@@ -22,6 +22,7 @@
 #############################################################################
 
 import datetime
+import itertools
 import math
 import struct
 from collections import Counter
@@ -1856,3 +1857,209 @@ def set_waveform_titles_and_labels(
 
     ax.set_xlabel(f"Time [{units}]")
     ax.set_ylabel("Voltage [V]")
+
+
+def plot_channel_waveforms(
+    file_path: Path,
+    root_tree: str = "sampic_hits",
+    batch_size: int = 100_000,
+    first_hit: int = 0,
+    num_hits: int = 10,
+    channel_filter: Optional[list[int]] = None,
+    interpolation_method: Optional[str] = "sinc",
+    interpolation_factor: int = 4,
+    interpolation_parameter: int = 8,
+    label: str = "PPS",
+    log_y: bool = False,
+    figsize: tuple[float, float] = (6, 4),
+    rlabel: str = "(13 TeV)",
+    is_data: bool = True,
+    title: Optional[str] = None,
+    file_name_id: Optional[str] = None,
+    cmap: Optional[str] = None,
+    time_scale: float = 10**9,
+    plot_sample_types: bool = True,
+) -> plt.Figure:
+    """
+    Plot multiple waveform hits from a SAMPIC data file in CMS style.
+
+    This function streams hit records from the specified data file
+    (Parquet, Feather, or ROOT), applies optional interpolation and
+    circular-buffer reordering, and draws each waveform with distinct
+    coloring and markers. It then assembles CMS-standard annotations,
+    a consolidated legend, and automatically generated titles.
+
+    Parameters
+    ----------
+    file_path : pathlib.Path
+        Path to the input file containing SAMPIC hit data. Supported formats:
+        Parquet (.parquet, .pq), Feather (.feather), or ROOT (.root).
+    root_tree : str, default "sampic_hits"
+        Name of the TTree inside a ROOT file to read.
+    batch_size : int, default 100000
+        Number of hits to read per iteration when streaming.
+    first_hit : int, default 0
+        Zero-based index of the first hit to plot (skips earlier hits).
+    num_hits : int, default 10
+        Maximum number of hit waveforms to display.
+    channel_filter : list of int or None, optional
+        If provided, only hits from these channel indices are plotted.
+    interpolation_method : {'sinc','hann','hamming','lanczos','resample','resample_poly'}, optional
+        Method for upsampling the waveform before plotting.
+    interpolation_factor : int, default 4
+        Upsampling factor for interpolation.
+    interpolation_parameter : int, default 8
+        Kernel/window size or filter parameter for the chosen interpolation.
+    label : str, default "PPS"
+        experiment label shown on the plot.
+    log_y : bool, default False
+        If True, use a logarithmic scale for the y-axis.
+    figsize : tuple of float, default (6, 4)
+        Figure size in inches.
+    rlabel : str, default "(13 TeV)"
+        Right-hand label (e.g. collision energy) in the CMS annotation.
+    is_data : bool, default True
+        If True, annotate as data; otherwise as simulation.
+    title : str or None, optional
+        Custom plot title. If None, an automatic title is generated.
+    file_name_id : str or None, optional
+        Identifier for the input file used in the auto-title; defaults to file name.
+    cmap : str or None, optional
+        Name of a Matplotlib colormap for channel coloring; defaults to style cycle.
+    time_scale : float, default 1E9
+        Multiplicative factor to apply to the time-axis before plotting.
+    plot_sample_types : bool, default True
+        If True, will plot the different distinc sample types with different symbols.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        Figure object containing the selected waveforms of V vs time,
+        styled according to CMS conventions.
+
+    Raises
+    ------
+    ValueError
+        If the input file format is unsupported, or if key columns are missing.
+    RuntimeError
+        If metadata cannot be extracted or plot configuration is invalid.
+
+    Notes
+    -----
+    - Uses `open_hit_reader` and `select_waveforms` to stream and filter hits.
+    - Delegates single-waveform rendering to `plot_waveform`.
+    - Finalizes annotations with `finalize_waveform_legend` and
+      `set_waveform_titles_and_labels`.
+    """
+
+    # 1) get period
+    run_metadata = get_file_metadata(file_path)
+    period = get_period_from_file_metadata(run_metadata)
+
+    # 2) Open reader
+    try:
+        batches = open_hit_reader(
+            file_path,
+            ["HITNumber", "Channel", "Baseline", "DataSize", "DataSample", "TriggerPosition"],
+            batch_size=batch_size,
+            root_tree=root_tree,
+        )
+    except ValueError as e:
+        raise RuntimeError(f"Failed reading hits from {file_path}: {e}")
+
+    # 3) Filter & iterate
+    waveforms = select_waveforms(batches, first_hit, num_hits, channel_filter)
+
+    # 4) Setup figure
+    #   Plot Style
+    with plt.style.use(sampiclyser_style):
+        #   Create figure and axis with custom size and create the plot
+        fig, ax = plt.subplots(figsize=figsize)
+        #   Setup coloring options
+        if cmap is None:
+            colors_list = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        else:
+            colors_list = plt.get_cmap(cmap).colors  # "tab10" cmap works well
+        color_cycle = itertools.cycle(colors_list)
+        channel_colors = {}
+
+        #   Setup interpolation options
+        interp_kwargs = dict(
+            interpolation_method=interpolation_method,
+            interpolation_factor=interpolation_factor,
+            interpolation_parameter=interpolation_parameter,
+        )
+
+        label_mode = "channel"
+        if channel_filter is not None and len(channel_filter) == 1:
+            label_mode = "hit"
+
+        # These ideally shoould be extracted from the metadata, if at all possible
+        reorder_circular_buffer = True
+        reorder_samp_arr = False
+
+        if plot_sample_types:
+            plot_buffer_start = True
+        else:
+            plot_buffer_start = False
+
+        if num_hits == 1:
+            label_mode = "both"
+
+        explicit_labels = False
+        if label_mode == "both":
+            explicit_labels = True
+
+        # 5) Plot each
+        hits_plotted = 0
+        for hid, channel, baseline, _, trig, samp in waveforms:
+            if label_mode == "channel":
+                color = channel_colors.setdefault(channel, next(color_cycle))
+            else:
+                color = next(color_cycle)
+            plot_waveform(
+                ax,
+                hid,
+                channel,
+                baseline,
+                samp,
+                trig,
+                period,
+                color,
+                interp_kwargs,
+                label_mode,
+                reorder_circular_buffer,
+                reorder_samp_arr,
+                plot_sample_types,
+                plot_buffer_start,
+                explicit_labels,
+                time_scale,
+            )
+            hits_plotted += 1
+
+        # 6) Finalize
+        if sampiclyser_style == hep.style.CMS:
+            hep.cms.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        elif sampiclyser_style in [hep.style.ATLAS, hep.style.ATLAS1, hep.style.ATLAS2]:
+            hep.atlas.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        elif sampiclyser_style in [hep.style.LHCb1, hep.style.LHCb2]:
+            hep.lhcb.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        elif sampiclyser_style in [hep.style.DUNE, hep.style.DUNE1]:
+            hep.dune.label(label, data=is_data, rlabel=rlabel, loc=0, ax=ax)
+        finalize_waveform_legend(ax, label_mode, plot_sample_types, plot_buffer_start, explicit_labels)
+        set_waveform_titles_and_labels(
+            ax,
+            file_path,
+            file_name_id=file_name_id,
+            title=title,
+            channel_filter=channel_filter,
+            first_hit=first_hit,
+            hits_plotted=hits_plotted,
+            time_scale=time_scale,
+        )
+        if log_y:
+            ax.set_yscale('log')
+
+        plt.tight_layout()
+
+        return fig
