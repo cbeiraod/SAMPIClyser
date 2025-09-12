@@ -87,11 +87,11 @@ def print_channel_hits(
     help='The name of the root ttree under which to save the hit data. Default: sampic_hits',
 )
 @click.option(
-    '--cms-label',
-    'cms_label',
+    '--label',
+    'label',
     type=str,
     default="Preliminary",
-    help='The plot label to put near the CMS text. Default: Preliminary',
+    help='The plot label to put near the top left text. Default: Preliminary',
 )
 @click.option('--logy', 'log_y', is_flag=True, help='Enable logarithmic y axis')
 @click.option(
@@ -136,7 +136,7 @@ def plot_hits(
     last: int,
     output: Path,
     root_tree: str,
-    cms_label: str,
+    label: str,
     log_y: bool,
     fig_width: float,
     fig_height: float,
@@ -154,7 +154,7 @@ def plot_hits(
         df=hit_summary,
         first_channel=first,
         last_channel=last,
-        cms_label=cms_label,
+        label=label,
         log_y=log_y,
         figsize=(fig_width, fig_height),
         rlabel=rlabel,
@@ -200,11 +200,11 @@ def plot_hits(
     help='The scale factor to apply to the hit count, used for adjusting central trigger. Default: 1.0',
 )
 @click.option(
-    '--cms-label',
-    'cms_label',
+    '--label',
+    'label',
     type=str,
     default="Preliminary",
-    help='The plot label to put near the CMS text. Default: Preliminary',
+    help='The plot label to put near the top left text. Default: Preliminary',
 )
 @click.option('--logy', 'log_y', is_flag=True, help='Enable logarithmic y axis')
 @click.option(
@@ -252,7 +252,7 @@ def plot_hit_rate(
     end_time: datetime.datetime,
     root_tree: str,
     scale_factor: float,
-    cms_label: str,
+    label: str,
     log_y: bool,
     fig_width: float,
     fig_height: float,
@@ -272,7 +272,7 @@ def plot_hit_rate(
         end_time=end_time,
         root_tree=root_tree,
         scale_factor=scale_factor,
-        cms_label=cms_label,
+        label=label,
         log_y=log_y,
         figsize=(fig_width, fig_height),
         rlabel=rlabel,
@@ -319,11 +319,11 @@ def plot_hit_rate(
     help='The scale factor to apply to the hit count, used for adjusting central trigger. Default: 1.0',
 )
 @click.option(
-    '--cms-label',
-    'cms_label',
+    '--label',
+    'label',
     type=str,
     default="Preliminary",
-    help='The plot label to put near the CMS text. Default: Preliminary',
+    help='The plot label to put near the top left text. Default: Preliminary',
 )
 @click.option('--logy', 'log_y', is_flag=True, help='Enable logarithmic y axis')
 @click.option(
@@ -372,7 +372,7 @@ def plot_channel_hit_rate(
     end_time: datetime.datetime,
     root_tree: str,
     scale_factor: float,
-    cms_label: str,
+    label: str,
     log_y: bool,
     fig_width: float,
     fig_height: float,
@@ -393,7 +393,7 @@ def plot_channel_hit_rate(
         end_time=end_time,
         root_tree=root_tree,
         scale_factor=scale_factor,
-        cms_label=cms_label,
+        label=label,
         log_y=log_y,
         figsize=(fig_width, fig_height),
         rlabel=rlabel,
