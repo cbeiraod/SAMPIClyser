@@ -1,8 +1,11 @@
 Changelog
 =========
 
-Current (2025-09-11)
+Current (2025-09-12)
 --------------------
+
+0.0.8 (2024-09-12)
+------------------
 
 * Added a function for steering the waveform plotting
 * Made previous plotting functions respect the selected style

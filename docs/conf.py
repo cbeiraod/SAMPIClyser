@@ -20,7 +20,7 @@ project = 'SAMPIClyser'
 year = '2025'
 author = 'Cristóvão B. da Cruz e Silva'
 copyright = '{0}, {1}'.format(year, author)
-version = release = '0.0.7'
+version = release = '0.0.8'
 
 pygments_style = 'trac'
 templates_path = ['.']

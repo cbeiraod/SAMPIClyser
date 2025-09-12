@@ -50,9 +50,9 @@ SAMPIClyser
     :alt: Supported implementations
     :target: https://pypi.org/project/SAMPIClyser
 
-.. |commits-since| image:: https://img.shields.io/github/commits-since/cbeiraod/SAMPIClyser/v0.0.7.svg
+.. |commits-since| image:: https://img.shields.io/github/commits-since/cbeiraod/SAMPIClyser/v0.0.8.svg
     :alt: Commits since latest release
-    :target: https://github.com/cbeiraod/SAMPIClyser/compare/v0.0.7...main
+    :target: https://github.com/cbeiraod/SAMPIClyser/compare/v0.0.8...main
 
 .. end-badges
 
