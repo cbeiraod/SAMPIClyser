@@ -4,6 +4,7 @@ Changelog
 Current (2025-09-11)
 --------------------
 
+* Added a function for setting style for sampiclyser plotting
 * Added a function to handle title and labels for waveform plots
 * Added a utility function to convert numbers to their corresponding ordinal
 * Added CLI interface for hitmap plotting

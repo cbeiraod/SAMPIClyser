@@ -57,6 +57,32 @@ from pyarrow import RecordBatch
 from scipy.signal import resample
 from scipy.signal import resample_poly
 
+sampiclyser_style = hep.style.CMS
+
+
+def set_mplhep_style(style: str = "CMS"):
+    global sampiclyser_style
+    if style == "CMS":
+        sampiclyser_style = hep.style.CMS
+    elif style == "ALICE":
+        sampiclyser_style = hep.style.ALICE
+    elif style == "ATLAS":
+        sampiclyser_style = hep.style.ATLAS
+    elif style == "ATLAS1":
+        sampiclyser_style = hep.style.ATLAS1
+    elif style == "ATLAS2":
+        sampiclyser_style = hep.style.ATLAS2
+    elif style == "LHCb1":
+        sampiclyser_style = hep.style.LHCb1
+    elif style == "LHCb2":
+        sampiclyser_style = hep.style.LHCb2
+    elif style == "DUNE":
+        sampiclyser_style = hep.style.DUNE
+    elif style == "DUNE1":
+        sampiclyser_style = hep.style.DUNE1
+    else:
+        raise RuntimeError(f"Unknown MPLHEP style: {style}")
+
 
 def open_hit_reader(
     file_path: Path, cols: Sequence[str], batch_size: int = 100_000, root_tree: str = "sampic_hits"
