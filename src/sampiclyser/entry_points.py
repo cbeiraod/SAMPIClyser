@@ -562,3 +562,144 @@ def plot_hitmap(
         fig.savefig(output)
     else:
         plt.show()
+
+
+@cli.command()
+@click.argument('decoded_file', type=click.Path(exists=True, path_type=Path))
+@click.option('--channel', '-c', type=int, multiple=True, help='If set, only waveforms from the selected chanels will be plotted')
+@click.option('--output', '-o', type=click.Path(path_type=Path), help='Path to save the plot')
+@click.option(
+    '--root-tree',
+    'root_tree',
+    type=str,
+    default="sampic_hits",
+    help='The name of the root ttree under which to save the hit data. Default: sampic_hits',
+)
+@click.option(
+    '--label',
+    'label',
+    type=str,
+    default="Preliminary",
+    help='The plot label to put near the top left text. Default: Preliminary',
+)
+@click.option('--logy', 'log_y', is_flag=True, help='Enable logarithmic y axis')
+@click.option(
+    '--fig-width',
+    'fig_width',
+    type=float,
+    default=15,
+    help='The width of the plot. Default: 15',
+)
+@click.option(
+    '--fig-height',
+    'fig_height',
+    type=float,
+    default=9,
+    help='The height of the plot. Default: 9',
+)
+@click.option(
+    '--right-label',
+    'rlabel',
+    type=str,
+    default="Test",
+    help='The plot label to put on the right side of the figure, typically the beam details. Default: Test',
+)
+@click.option(
+    '--is-data',
+    '-d',
+    'is_data',
+    is_flag=True,
+    help='Whether the processed data corresponds to real data (as an alternative to simulation data)',
+)
+@click.option(
+    '--title',
+    '-t',
+    'title',
+    type=str,
+    default=None,
+    help='The plot title to put at the top of the figure. Default: None',
+)
+@click.option(
+    '--skip-hits',
+    'skip_hits',
+    type=int,
+    default=0,
+    help='The number of hits to skip before starting to plot. Default: 0',
+)
+@click.option(
+    '--num-hits',
+    'num_hits',
+    type=int,
+    default=10,
+    help='The number of hits to plot. Default: 10',
+)
+@click.option(
+    '--name-override',
+    'name_override',
+    type=str,
+    help='Name to use to override the file name',
+)
+@click.option(
+    '--color-map',
+    'color_map',
+    type=str,
+    default="tab10",
+    help='The color map to use for coloring the hits, see matplotlib colormaps for valid options. Default: tab10',
+)
+@click.option(
+    '--time-scale',
+    'time_scale',
+    type=click.Choice(['s', 'ms', 'us', 'ns', 'ps']),
+    default="ns",
+    help='The scale to use for the time axis. Default: ns',
+)
+def plot_waveforms(
+    decoded_file: Path,
+    channel,
+    output: Path,
+    root_tree: str,
+    label: str,
+    log_y: bool,
+    fig_width: float,
+    fig_height: float,
+    rlabel: str,
+    is_data: bool,
+    title: str,
+    skip_hits: int,
+    num_hits: int,
+    name_override: str,
+    color_map: str,
+    time_scale: str,
+):
+    """
+    Plot waveforms from a decoded SAMPIC run file, with some optional waveform selections.
+    """
+    time_scale_map = {
+        "s": 1,
+        "ms": 1e3,
+        "us": 1e6,
+        "ns": 1e9,
+        "ps": 1e12,
+    }
+
+    fig = sampiclyser.plot_channel_waveforms(
+        file_path=decoded_file,
+        root_tree=root_tree,
+        first_hit=skip_hits,
+        num_hits=num_hits,
+        channel_filter=[ch for ch in channel] if channel is not None and len(channel) > 0 else None,
+        label=label,
+        log_y=log_y,
+        figsize=(fig_width, fig_height),
+        rlabel=rlabel,
+        is_data=is_data,
+        title=title,
+        file_name_id=name_override if name_override else None,
+        cmap=color_map,
+        time_scale=time_scale_map[time_scale],
+    )
+
+    if output:
+        fig.savefig(output)
+    else:
+        plt.show()

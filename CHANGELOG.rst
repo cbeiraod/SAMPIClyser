@@ -4,6 +4,8 @@ Changelog
 Current (2025-09-12)
 --------------------
 
+* Fixed some bugs from previous release
+
 0.0.8 (2024-09-12)
 ------------------
 

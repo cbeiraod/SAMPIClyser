@@ -252,7 +252,7 @@ def plot_channel_hits(
     counts = [hits_map.get(ch, 0) for ch in channels]
 
     # Apply selected sampiclyser style from mplhep
-    with plt.style.use(sampiclyser_style):
+    with plt.style.context(sampiclyser_style):
         # Create figure and axis with custom size and create the bar histogram
         fig, ax = plt.subplots(figsize=figsize)
         ax.bar(channels, counts, align='center', width=1.0, edgecolor='black', color=color)
@@ -678,7 +678,7 @@ def plot_hit_rate(  # noqa: max-complexity=22
         rates = np.array([counts[b] * scale_factor / bin_size for b in bins], dtype=int)
 
     # Apply selected sampiclyser style from mplhep
-    with plt.style.use(sampiclyser_style):
+    with plt.style.context(sampiclyser_style):
         # Create figure and axis with custom size and create the plot
         fig, ax = plt.subplots(figsize=figsize)
         ax.step(dtimes, rates, where="mid", color=color)
@@ -876,7 +876,7 @@ def plot_channel_hit_rate(  # noqa: max-complexity=22
         rates = np.array([counts[b] * scale_factor / bin_size for b in bins], dtype=int)
 
     # Apply selected sampiclyser style from mplhep
-    with plt.style.use(sampiclyser_style):
+    with plt.style.context(sampiclyser_style):
         # Create figure and axis with custom size and create the plot
         fig, ax = plt.subplots(figsize=figsize)
         ax.step(dtimes, rates, where="mid", color=color)
@@ -1972,7 +1972,7 @@ def plot_channel_waveforms(
 
     # 4) Setup figure
     #   Plot Style
-    with plt.style.use(sampiclyser_style):
+    with plt.style.context(sampiclyser_style):
         #   Create figure and axis with custom size and create the plot
         fig, ax = plt.subplots(figsize=figsize)
         #   Setup coloring options

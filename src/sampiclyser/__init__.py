@@ -29,7 +29,18 @@ from .sampic_decoder import SAMPIC_Run_Decoder
 from .sampic_tools import get_channel_hits
 from .sampic_tools import plot_channel_hit_rate
 from .sampic_tools import plot_channel_hits
+from .sampic_tools import plot_channel_waveforms
 from .sampic_tools import plot_hit_rate
+from .sampic_tools import set_mplhep_style
 from .sensor_hitmaps import plot_hitmap
 
-__all__ = ["SAMPIC_Run_Decoder", "get_channel_hits", "plot_channel_hits", "plot_hit_rate", "plot_channel_hit_rate", "plot_hitmap"]
+__all__ = [
+    "SAMPIC_Run_Decoder",
+    "set_mplhep_style",
+    "get_channel_hits",
+    "plot_channel_hits",
+    "plot_hit_rate",
+    "plot_channel_hit_rate",
+    "plot_hitmap",
+    "plot_channel_waveforms",
+]
