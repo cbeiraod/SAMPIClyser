@@ -754,3 +754,54 @@ def plot_waveforms(
         fig.savefig(output)
     else:
         plt.show()
+
+
+@cli.command()
+@click.argument('decoded_file', type=click.Path(exists=True, path_type=Path))
+@click.option(
+    '--use-unix',
+    'use_unix',
+    is_flag=True,
+    help='If set, use the unix timestamp for determining hit order instead of using SAMPIC reconstructed time',
+)
+@click.option('--find-all', 'find_all', is_flag=True, help='If set, will find all out of order events instead of stopping at the first one')
+@click.option(
+    '--root-tree',
+    'root_tree',
+    type=str,
+    default="sampic_hits",
+    help='The name of the root ttree under which to save the hit data. Default: sampic_hits',
+)
+@click.option(
+    '--batch-size',
+    'batch_size',
+    type=int,
+    default=100000,
+    help='Number of hits to read at once, as a batch, from disk. Default: 100 000. You should not need to tune this parameter unless in a memory constrained system or searching for ultimate performance.',
+)
+def check_time_ordering(
+    decoded_file: Path,
+    use_unix: bool,
+    find_all: bool,
+    root_tree: str,
+    batch_size: int,
+):
+    """
+    Check time ordering of the hits from a decoded SAMPIC run file.
+    """
+
+    out_of_order = sampiclyser.check_time_ordering(
+        decoded_file,
+        use_unix_time=use_unix,
+        find_all=find_all,
+        batch_size=batch_size,
+        root_tree=root_tree,
+    )
+
+    if len(out_of_order) > 0:
+        if not find_all:
+            raise RuntimeError("At least one hit is out of order")
+        else:
+            raise RuntimeError(f"Found {len(out_of_order)} hits out of order")
+    else:
+        print("All hits are ordered")

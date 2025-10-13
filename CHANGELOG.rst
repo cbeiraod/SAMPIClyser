@@ -4,6 +4,7 @@ Changelog
 Current (2025-10-13)
 --------------------
 
+* Added CLI for checking time ordering
 * Added function to determine if hits are time-ordered or not
 * Added batch_size option to most of the sampiclyser utilities
 
