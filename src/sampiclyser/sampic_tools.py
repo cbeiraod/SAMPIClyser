@@ -2063,3 +2063,107 @@ def plot_channel_waveforms(
         plt.tight_layout()
 
         return fig
+
+
+def sampic_reconstruct_time_dict(rec: dict) -> float:
+    """
+    Function implementing the custom SAMPIC time reconstruction logic, operating on a dict of SAMPIC recorded fields
+
+    Parameters
+    ----------
+    rec : dict
+        Dictionary containing the required SAMPIC fields for time reconstruction
+        Required:
+            UnixTime -
+
+    Raises
+    ------
+    ValueError
+        If `use_unix_time` is False and no reconstruction algorithm
+        is provided in `_reconstruct_time`.
+    """
+    # Placeholder for custom SAMPIC time reconstruction logic
+    # Must return a float timestamp for a hit record `rec`
+    raise ValueError("Custom time reconstruction not implemented")
+
+
+def check_time_ordering(
+    file_path: Path, use_unix_time: bool = False, find_all: bool = False, batch_size: int = 100_000, root_tree: str = "sampic_hits"
+) -> List[Tuple[int, float, float]]:
+    """
+    Verify that hit records in a SAMPIC output file are non-decreasing in time.
+
+    Streams through the file in memory-efficient batches, reconstructs or
+    reads each hit's timestamp, and checks for any out-of-order intervals.
+
+    Parameters
+    ----------
+    file_path : pathlib.Path
+        Path to the input data file (.parquet, .feather, or .root).
+    use_unix_time : bool, optional
+        If True, use the 'UnixTime' column directly as the hit timestamp.
+        Otherwise, applies a custom reconstruction algorithm (must be
+        implemented in `_reconstruct_time`).  Default is False.
+    find_all : bool, optional
+        If True, continue scanning the entire file and collect all
+        out-of-order events; if False, stop at the first detection.
+        Default is False.
+    batch_size : int, optional
+        Number of rows to read per batch from `open_hit_reader`.  Default is 100000.
+    root_tree : str, optional
+        Name of the TTree inside a ROOT file (only used for .root).  Default is "sampic_hits".
+
+    Returns
+    -------
+    list of (hit_index, previous_time, current_time)
+        A list of tuples for each detected out-of-order event, where:
+        - `hit_index` is the zero-based index of the later (out-of-order) hit.
+        - `previous_time` is the timestamp of the immediately preceding hit.
+        - `current_time` is the timestamp of the out-of-order hit.
+        If no violations are found, an empty list is returned.
+
+    Raises
+    ------
+    ValueError
+        If `use_unix_time` is False and no reconstruction algorithm
+        is provided in `_reconstruct_time`.
+    """
+
+    violations: List[Tuple[int, float, float]] = []
+    last_time: Optional[float] = None
+    hit_idx = 0
+
+    # Choose extractor function
+    if use_unix_time:
+
+        def extract_ts(batch, i):
+            # batch may be RecordBatch or ak.Array
+            if isinstance(batch, RecordBatch):
+                return float(batch.column('UnixTime')[i].as_py())
+            else:
+                return float(np.asarray(batch['UnixTime'])[i])
+
+    else:
+
+        def extract_ts(batch, i):
+            # call the placeholder reconstruction
+            rec = {}
+            # assemble record fields as needed for reconstruction
+            for col in batch.schema.names if isinstance(batch, RecordBatch) else batch.fields:
+                rec[col] = batch.column(col)[i].as_py() if isinstance(batch, RecordBatch) else np.asarray(batch[col])[i]
+            return sampic_reconstruct_time_dict(rec)
+
+    # Stream through hits
+    for batch in open_hit_reader(file_path, cols=['UnixTime'], batch_size=batch_size, root_tree=root_tree):
+        # determine number of entries in this batch
+        n = batch.num_rows if isinstance(batch, RecordBatch) else len(batch['UnixTime'])
+        for i in range(n):
+            ts = extract_ts(batch, i)
+            if last_time is not None and ts < last_time:
+                violations.append((hit_idx, last_time, ts))
+                if not find_all:
+                    return violations
+            last_time = ts
+            hit_idx += 1
+
+    return violations
