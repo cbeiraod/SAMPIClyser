@@ -26,7 +26,9 @@ from __future__ import annotations
 __version__ = '0.1.0'
 
 from .sampic_decoder import SAMPIC_Run_Decoder
+from .sampic_tools import check_time_ordering
 from .sampic_tools import get_channel_hits
+from .sampic_tools import get_file_metadata
 from .sampic_tools import plot_channel_hit_rate
 from .sampic_tools import plot_channel_hits
 from .sampic_tools import plot_channel_waveforms
@@ -43,4 +45,6 @@ __all__ = [
     "plot_channel_hit_rate",
     "plot_hitmap",
     "plot_channel_waveforms",
+    "check_time_ordering",
+    "get_file_metadata",
 ]
