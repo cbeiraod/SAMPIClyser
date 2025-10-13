@@ -1,8 +1,10 @@
 Changelog
 =========
 
-Current (2025-09-12)
+Current (2025-10-13)
 --------------------
+
+* Added batch_size option to most of the sampiclyser utilities
 
 
 0.1.0 (2024-09-12)

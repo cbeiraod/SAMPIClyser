@@ -61,15 +61,23 @@ def version():
     default="sampic_hits",
     help='The name of the root ttree under which to save the hit data. Default: sampic_hits',
 )
+@click.option(
+    '--batch-size',
+    'batch_size',
+    type=int,
+    default=100000,
+    help='Number of hits to read at once, as a batch, from disk. Default: 100 000. You should not need to tune this parameter unless in a memory constrained system or searching for ultimate performance.',
+)
 def print_channel_hits(
     decoded_file: Path,
     root_tree: str,
+    batch_size: int,
 ):
     """
     Print channel hit counts from a decoded SAMPIC run file.
     """
 
-    hit_summary = sampiclyser.get_channel_hits(file_path=decoded_file, root_tree=root_tree)
+    hit_summary = sampiclyser.get_channel_hits(file_path=decoded_file, batch_size=batch_size, root_tree=root_tree)
 
     click.echo(hit_summary)
 
@@ -85,6 +93,13 @@ def print_channel_hits(
     type=str,
     default="sampic_hits",
     help='The name of the root ttree under which to save the hit data. Default: sampic_hits',
+)
+@click.option(
+    '--batch-size',
+    'batch_size',
+    type=int,
+    default=100000,
+    help='Number of hits to read at once, as a batch, from disk. Default: 100 000. You should not need to tune this parameter unless in a memory constrained system or searching for ultimate performance.',
 )
 @click.option(
     '--label',
@@ -136,6 +151,7 @@ def plot_hits(
     last: int,
     output: Path,
     root_tree: str,
+    batch_size: int,
     label: str,
     log_y: bool,
     fig_width: float,
@@ -148,7 +164,7 @@ def plot_hits(
     Plot channel hit counts from a decoded SAMPIC run file.
     """
 
-    hit_summary = sampiclyser.get_channel_hits(file_path=decoded_file, root_tree=root_tree)
+    hit_summary = sampiclyser.get_channel_hits(file_path=decoded_file, batch_size=batch_size, root_tree=root_tree)
 
     fig = sampiclyser.plot_channel_hits(
         df=hit_summary,
@@ -191,6 +207,13 @@ def plot_hits(
     type=str,
     default="sampic_hits",
     help='The name of the root ttree under which to save the hit data. Default: sampic_hits',
+)
+@click.option(
+    '--batch-size',
+    'batch_size',
+    type=int,
+    default=100000,
+    help='Number of hits to read at once, as a batch, from disk. Default: 100 000. You should not need to tune this parameter unless in a memory constrained system or searching for ultimate performance.',
 )
 @click.option(
     '--scale-factor',
@@ -251,6 +274,7 @@ def plot_hit_rate(
     start_time: datetime.datetime,
     end_time: datetime.datetime,
     root_tree: str,
+    batch_size: int,
     scale_factor: float,
     label: str,
     log_y: bool,
@@ -267,6 +291,7 @@ def plot_hit_rate(
     fig = sampiclyser.plot_hit_rate(
         file_path=decoded_file,
         bin_size=bin_size,
+        batch_size=batch_size,
         plot_hits=plot_hits,
         start_time=start_time,
         end_time=end_time,
@@ -310,6 +335,13 @@ def plot_hit_rate(
     type=str,
     default="sampic_hits",
     help='The name of the root ttree under which to save the hit data. Default: sampic_hits',
+)
+@click.option(
+    '--batch-size',
+    'batch_size',
+    type=int,
+    default=100000,
+    help='Number of hits to read at once, as a batch, from disk. Default: 100 000. You should not need to tune this parameter unless in a memory constrained system or searching for ultimate performance.',
 )
 @click.option(
     '--scale-factor',
@@ -371,6 +403,7 @@ def plot_channel_hit_rate(
     start_time: datetime.datetime,
     end_time: datetime.datetime,
     root_tree: str,
+    batch_size: int,
     scale_factor: float,
     label: str,
     log_y: bool,
@@ -388,6 +421,7 @@ def plot_channel_hit_rate(
         file_path=decoded_file,
         channel=channel,
         bin_size=bin_size,
+        batch_size=batch_size,
         plot_hits=plot_hits,
         start_time=start_time,
         end_time=end_time,
@@ -417,6 +451,13 @@ def plot_channel_hit_rate(
     type=str,
     default="sampic_hits",
     help='The name of the root ttree under which to save the hit data. Default: sampic_hits',
+)
+@click.option(
+    '--batch-size',
+    'batch_size',
+    type=int,
+    default=100000,
+    help='Number of hits to read at once, as a batch, from disk. Default: 100 000. You should not need to tune this parameter unless in a memory constrained system or searching for ultimate performance.',
 )
 @click.option(
     '--title',
@@ -479,6 +520,7 @@ def plot_hitmap(
     config_file: Path,
     output: Path,
     root_tree: str,
+    batch_size: int,
     title: str,
     fig_width: float,
     fig_height: float,
@@ -542,7 +584,7 @@ def plot_hitmap(
         )
         print(sensors[sensor_name]["global_90rotationUnits"])
 
-    hit_summary = sampiclyser.get_channel_hits(file_path=decoded_file, root_tree=root_tree)
+    hit_summary = sampiclyser.get_channel_hits(file_path=decoded_file, batch_size=batch_size, root_tree=root_tree)
 
     fig = sampiclyser.plot_hitmap(
         summary_df=hit_summary,
@@ -574,6 +616,13 @@ def plot_hitmap(
     type=str,
     default="sampic_hits",
     help='The name of the root ttree under which to save the hit data. Default: sampic_hits',
+)
+@click.option(
+    '--batch-size',
+    'batch_size',
+    type=int,
+    default=100000,
+    help='Number of hits to read at once, as a batch, from disk. Default: 100 000. You should not need to tune this parameter unless in a memory constrained system or searching for ultimate performance.',
 )
 @click.option(
     '--label',
@@ -658,6 +707,7 @@ def plot_waveforms(
     channel,
     output: Path,
     root_tree: str,
+    batch_size: int,
     label: str,
     log_y: bool,
     fig_width: float,
@@ -685,6 +735,7 @@ def plot_waveforms(
     fig = sampiclyser.plot_channel_waveforms(
         file_path=decoded_file,
         root_tree=root_tree,
+        batch_size=batch_size,
         first_hit=skip_hits,
         num_hits=num_hits,
         channel_filter=[ch for ch in channel] if channel is not None and len(channel) > 0 else None,

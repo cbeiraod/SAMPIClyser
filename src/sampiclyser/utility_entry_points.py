@@ -98,3 +98,6 @@ def generate_example_hitmap_config(output_file):
             yaml.dump(example_file_data, outfile, default_flow_style=False)
     else:
         print(f"Unknown config file extension: {extension}")
+
+
+# TODO: Add an interactive config file generation script
