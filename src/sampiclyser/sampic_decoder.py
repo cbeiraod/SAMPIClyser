@@ -75,8 +75,8 @@ SAMPIC_Schema_Info = {
 }
 
 
-def build_schema(metadata=None):
-    fields = [pa.field(name, SAMPIC_Schema_Info[name][1]) for name in SAMPIC_Schema_Info if SAMPIC_Schema_Info[name][1] is not None]
+def build_schema(metadata=None, schemaInfo: Dict = SAMPIC_Schema_Info):
+    fields = [pa.field(name, schemaInfo[name][1]) for name in schemaInfo if schemaInfo[name][1] is not None]
     schema = pa.schema(fields)
 
     if metadata is not None:
