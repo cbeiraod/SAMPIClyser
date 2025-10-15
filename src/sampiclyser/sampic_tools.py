@@ -2084,23 +2084,24 @@ def sampic_reconstruct_time_dict(rec: dict) -> float:
     """
     # Placeholder for custom SAMPIC time reconstruction logic
     # Must return a float timestamp for a hit record `rec`
+    return rec['UnixTime']
     raise ValueError("Custom time reconstruction not implemented")
 
 
-def extract_ts_unix_time(batch, i):
+def extract_ts_unix_time(batch, idx):
     # batch may be RecordBatch or ak.Array
     if isinstance(batch, RecordBatch):
-        return float(batch.column('UnixTime')[i].as_py())
+        return float(batch.column('UnixTime')[idx].as_py())
     else:
-        return float(np.asarray(batch['UnixTime'])[i])
+        return float(np.asarray(batch['UnixTime'])[idx])
 
 
-def extract_ts_SAMPIC(batch, i):
+def extract_ts_SAMPIC(batch, idx):
     # call the SAMPIC time reconstruction
     rec = {}
     # assemble record fields as needed for reconstruction
     for col in batch.schema.names if isinstance(batch, RecordBatch) else batch.fields:
-        rec[col] = batch.column(col)[i].as_py() if isinstance(batch, RecordBatch) else np.asarray(batch[col])[i]
+        rec[col] = batch.column(col)[idx].as_py() if isinstance(batch, RecordBatch) else np.asarray(batch[col])[idx]
     return sampic_reconstruct_time_dict(rec)
 
 
