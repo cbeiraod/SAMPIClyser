@@ -4,6 +4,9 @@ Changelog
 Current (2025-10-15)
 --------------------
 
+* Moved timestamp extractor functions to fully available functions for reuse
+
+
 0.1.1 (2025-10-15)
 ------------------
 

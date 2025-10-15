@@ -2087,6 +2087,23 @@ def sampic_reconstruct_time_dict(rec: dict) -> float:
     raise ValueError("Custom time reconstruction not implemented")
 
 
+def extract_ts_unix_time(batch, i):
+    # batch may be RecordBatch or ak.Array
+    if isinstance(batch, RecordBatch):
+        return float(batch.column('UnixTime')[i].as_py())
+    else:
+        return float(np.asarray(batch['UnixTime'])[i])
+
+
+def extract_ts_SAMPIC(batch, i):
+    # call the SAMPIC time reconstruction
+    rec = {}
+    # assemble record fields as needed for reconstruction
+    for col in batch.schema.names if isinstance(batch, RecordBatch) else batch.fields:
+        rec[col] = batch.column(col)[i].as_py() if isinstance(batch, RecordBatch) else np.asarray(batch[col])[i]
+    return sampic_reconstruct_time_dict(rec)
+
+
 def check_time_ordering(
     file_path: Path, use_unix_time: bool = False, find_all: bool = False, batch_size: int = 100_000, root_tree: str = "sampic_hits"
 ) -> List[Tuple[int, float, float]]:
@@ -2135,23 +2152,9 @@ def check_time_ordering(
 
     # Choose extractor function
     if use_unix_time:
-
-        def extract_ts(batch, i):
-            # batch may be RecordBatch or ak.Array
-            if isinstance(batch, RecordBatch):
-                return float(batch.column('UnixTime')[i].as_py())
-            else:
-                return float(np.asarray(batch['UnixTime'])[i])
-
+        extract_ts = extract_ts_unix_time
     else:
-
-        def extract_ts(batch, i):
-            # call the placeholder reconstruction
-            rec = {}
-            # assemble record fields as needed for reconstruction
-            for col in batch.schema.names if isinstance(batch, RecordBatch) else batch.fields:
-                rec[col] = batch.column(col)[i].as_py() if isinstance(batch, RecordBatch) else np.asarray(batch[col])[i]
-            return sampic_reconstruct_time_dict(rec)
+        extract_ts = extract_ts_SAMPIC
 
     # Stream through hits
     for batch in open_hit_reader(file_path, cols=['UnixTime'], batch_size=batch_size, root_tree=root_tree):
