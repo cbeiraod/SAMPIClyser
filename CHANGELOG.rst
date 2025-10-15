@@ -4,6 +4,7 @@ Changelog
 Current (2025-10-15)
 --------------------
 
+* Added a function to reprocess data files and reorder the hits so that they are time ordered
 * Added a context manager for reprocessing data files
 * Refactored sampic decoder functions
 * Added timestamp and record extractors

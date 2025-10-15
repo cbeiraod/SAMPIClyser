@@ -22,11 +22,14 @@
 #############################################################################
 
 import datetime
+import heapq
 import itertools
 import math
 import struct
 from collections import Counter
 from contextlib import contextmanager
+from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 from typing import Any
 from typing import Dict
@@ -66,6 +69,23 @@ from sampiclyser.sampic_decoder import build_schema
 from sampiclyser.sampic_decoder import prepare_header_metadata_in_bytes
 
 sampiclyser_style = hep.style.CMS
+
+
+@dataclass(order=True)
+class TimestampedRecord:
+    """
+    Container for a hit record with an associated timestamp, sortable by time.
+
+    Attributes
+    ----------
+    timestamp : float
+        The hit timestamp (seconds since epoch or reconstructed).
+    record : Any
+        The full hit data (e.g., dict of field values).  Not used for ordering.
+    """
+
+    timestamp: float
+    record: Any = field(compare=False)
 
 
 def set_mplhep_style(style: str = "CMS"):
@@ -2375,18 +2395,18 @@ def check_time_ordering(
     last_time: Optional[float] = None
     hit_idx = 0
 
-    # Choose extractor function
+    # Select extractor
     if use_unix_time:
-        extract_ts = extract_ts_unix_time
+        extractor = lambda batch, i: extract_ts_unix_time(batch, i)
     else:
-        extract_ts = extract_ts_SAMPIC
+        extractor = lambda batch, i: extract_ts_SAMPIC(batch, i)
 
     # Stream through hits
     for batch in open_hit_reader(file_path, cols=['UnixTime'], batch_size=batch_size, root_tree=root_tree):
         # determine number of entries in this batch
         n = batch.num_rows if isinstance(batch, RecordBatch) else len(batch['UnixTime'])
         for i in range(n):
-            ts = extract_ts(batch, i)
+            ts = extractor(batch, i)
             if last_time is not None and ts < last_time:
                 violations.append((hit_idx, last_time, ts))
                 if not find_all:
@@ -2541,3 +2561,136 @@ def reprocess_data_files(
         if feather_writer is not None:
             feather_writer.close()
             sink.close()
+
+
+def _write_to_outputs(
+    rec: Dict[str, Any],
+    schema: pa.Schema,
+    schemaInfo: Dict[str, Tuple],
+    feather_writer: Optional[Any],
+    parquet_writer: Optional[pq.ParquetWriter],
+    root_tree_obj: Optional[Any],
+) -> None:
+    """
+    Internal helper: write a single record to enabled output writers.
+    """
+    if feather_writer or parquet_writer:
+        # Convert to Table for Arrow formats
+        table = pa.Table.from_pydict({k: [v] for k, v in rec.items()}, schema=schema)
+        if feather_writer:
+            feather_writer.write_batch(table.to_batches()[0])
+            # feather_writer.write(tbl)
+        if parquet_writer:
+            parquet_writer.write_table(table)
+    if root_tree_obj:
+        root_data = {
+            col: np.array([rec[col]], dtype=schemaInfo[col][2]) for col in rec if col in schemaInfo and schemaInfo[col][2] is not None
+        }
+        root_tree_obj.extend(root_data)
+
+
+def reorder_hits(
+    input_path: Path,
+    output_feather_path: Optional[Path] = None,
+    output_parquet_path: Optional[Path] = None,
+    output_root_path: Optional[Path] = None,
+    root_tree: str = "sampic_hits",
+    use_unix_time: bool = False,
+    batch_size: int = 100_000,
+    max_time_offset: Optional[float] = None,
+    schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info,
+) -> None:
+    """
+    Stream and reorder hit records into non-decreasing time order, writing to a new file.
+
+    This function reads hit records from `input_path` (Feather, Parquet, or ROOT) in
+    memory-efficient batches, reconstructs or reads each hit's timestamp, and emits
+    them in sorted order (non-decreasing time) to `output_path` in the same or different
+    format.  A sliding window (heap) is used to handle small out-of-order intervals
+    up to `max_time_offset` if provided, otherwise fully buffers.
+
+    Parameters
+    ----------
+    input_path : pathlib.Path
+        Path to the input decoded SAMPIC data file (.parquet, .pq, .feather, or .root).
+    output_feather_path : pathlib.Path or None, optional
+        If not None, path to write the reordered data in Feather format.
+    output_parquet_path : pathlib.Path or None, optional
+        If not None, path to write the reordered data in Parquet format.
+    output_root_path : pathlib.Path or None, optional
+        If not None, path to write the reordered data to a ROOT file. Writes
+        data TTree with same `root_tree` name and a metadata TTree.
+    root_tree : str, optional
+        Name of the TTree inside the ROOT file (default: `"sampic_hits"`).
+    use_unix_time : bool, default False
+        If True, use the 'UnixTime' column directly; otherwise use
+        `sampic_reconstruct_time_dict` to compute timestamps.
+    batch_size : int, default 100000
+        Number of rows/entries to read per batch from the input.
+    max_time_offset : float or None, optional
+        Maximum lag (seconds) allowed before emitting buffered records.
+        Records older than (current_max_time - max_time_offset) are written.
+        If None, all records are buffered and sorted fully before writing.
+    schemaInfo : dict, default SAMPIC_Schema_Info
+        Mapping of field names to type definitions used for ROOT dtype.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    ValueError
+        If timestamp reconstruction fails or required columns missing.
+    RuntimeError
+        If no output path is provided.
+
+    Notes
+    -----
+    - Metadata from the input file is propagated to all output formats.
+    - Parquet and Feather writing use PyArrow writers with an explicit schema.
+    - ROOT writing uses uproot to extend a TTree in streaming fashion.
+    """
+    # Ensure at least one output
+    if not any([output_feather_path, output_parquet_path, output_root_path]):
+        raise RuntimeError("At least one output path must be specified")
+
+    # Use context manager for opening files and writers
+    with reprocess_data_files(
+        input_path=input_path,
+        output_feather_path=output_feather_path,
+        output_parquet_path=output_parquet_path,
+        output_root_path=output_root_path,
+        root_tree=root_tree,
+        schemaInfo=schemaInfo,
+    ) as (columns, schema, feather_writer, parquet_writer, root_tree_obj):
+        # Select extractor
+        if use_unix_time:
+            extractor = lambda batch, i: extract_unix_time_and_record(batch, i)
+        else:
+            extractor = lambda batch, i: extract_SAMPIC_time_and_record(batch, i)
+
+        heap: List[TimestampedRecord] = []
+        current_max_time = None
+
+        # Stream input
+        for batch in open_hit_reader(input_path, cols=columns, batch_size=batch_size, root_tree=root_tree):
+            n = batch.num_rows if isinstance(batch, RecordBatch) else len(batch[columns[0]])
+
+            for i in range(n):
+                ts, rec = extractor(batch, i)
+                if current_max_time is None or ts > current_max_time:
+                    current_max_time = ts
+                heapq.heappush(heap, TimestampedRecord(ts, rec))
+
+                # Emit due records
+                if max_time_offset is not None and current_max_time is not None:
+                    cutoff = current_max_time - max_time_offset
+                    while heap and heap[0].timestamp <= cutoff:
+                        write_record = heapq.heappop(heap).record
+                        _write_to_outputs(write_record, schema, schemaInfo, feather_writer, parquet_writer, root_tree_obj)
+
+        # Flush remaining
+        while heap:
+            write_record = heapq.heappop(heap).record
+            _write_to_outputs(write_record, schema, schemaInfo, feather_writer, parquet_writer, root_tree_obj)
