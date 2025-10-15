@@ -4,6 +4,9 @@ Changelog
 Current (2025-10-15)
 --------------------
 
+0.1.1 (2025-10-15)
+------------------
+
 * Added an empty root data generator for setting dtypes correctly
 * Modularised the schema code for processing data in a more unified and central way
 * Added get_file_metadata to the default module imports
