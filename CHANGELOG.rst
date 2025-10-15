@@ -4,6 +4,7 @@ Changelog
 Current (2025-10-15)
 --------------------
 
+* Added timestamp and record extractors
 * Moved timestamp extractor functions to fully available functions for reuse
 
 

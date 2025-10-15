@@ -2200,6 +2200,129 @@ def extract_ts_SAMPIC(batch: Union[RecordBatch, ak.highlevel.Array], idx: int) -
     return float(ts)
 
 
+def extract_unix_time_and_record(batch: Union[RecordBatch, ak.highlevel.Array], idx: int) -> Tuple[float, Dict[str, Any]]:
+    """
+    Extract the UnixTime timestamp and full record from a batch at a given index.
+
+    This utility supports both PyArrow RecordBatch and Awkward Array inputs.
+    It builds a dictionary of all fields for the specified hit and returns
+    its UnixTime timestamp along with the record dict.
+
+    Parameters
+    ----------
+    batch : RecordBatch or awkward.highlevel.Array
+        A batch of hit records containing a 'UnixTime' field among others.
+    idx : int
+        Zero-based index within the batch to extract.
+
+    Returns
+    -------
+    ts : float
+        The UnixTime timestamp (in seconds) of the hit.
+    rec : dict
+        Mapping of field names to their Python values for that hit.
+
+    Raises
+    ------
+    KeyError
+        If 'UnixTime' or any other field is missing from the batch.
+    IndexError
+        If `idx` is out of bounds for the batch.
+    TypeError
+        If `batch` is neither a RecordBatch nor an Awkward Array.
+    """
+    # Determine field names
+    if isinstance(batch, RecordBatch):
+        field_names = batch.schema.names
+    elif isinstance(batch, ak.highlevel.Array):
+        field_names = batch.fields
+    else:
+        raise TypeError(f"Unsupported batch type {type(batch)}; expected RecordBatch or ak.Array")
+
+    rec: Dict[str, Any] = {}
+    # Extract all fields
+    for col in field_names:
+        try:
+            if isinstance(batch, RecordBatch):
+                rec[col] = batch.column(col)[idx].as_py()
+            else:
+                rec[col] = np.asarray(batch[col])[idx]
+        except KeyError:
+            raise KeyError(f"Missing required field '{col}' in batch")
+        except IndexError:
+            raise IndexError(f"Index {idx} out of bounds for field '{col}'")
+
+    # Extract timestamp
+    try:
+        ts = float(rec['UnixTime'])
+    except KeyError:
+        raise KeyError("'UnixTime' field not found for timestamp extraction")
+    except (TypeError, ValueError):
+        raise ValueError(f"Invalid UnixTime value: {rec.get('UnixTime')}")
+
+    return ts, rec
+
+
+def extract_SAMPIC_time_and_record(batch: Union[RecordBatch, ak.highlevel.Array], idx: int) -> Tuple[float, Dict[str, Any]]:
+    """
+    Reconstruct SAMPIC hit timestamp and return full record from a batch.
+
+    Builds a dict of all fields for the specified hit and uses
+    `sampic_reconstruct_time_dict` to compute its timestamp.
+
+    Parameters
+    ----------
+    batch : RecordBatch or awkward.highlevel.Array
+        A batch of hit records containing all fields required for reconstruction.
+    idx : int
+        Zero-based index within the batch to extract.
+
+    Returns
+    -------
+    ts : float
+        The reconstructed timestamp (in seconds) for the hit.
+    rec : dict
+        Mapping of field names to their Python values for that hit.
+
+    Raises
+    ------
+    KeyError
+        If any required field is missing from the batch.
+    IndexError
+        If `idx` is out of bounds for the batch.
+    TypeError
+        If `batch` is neither a RecordBatch nor an Awkward Array.
+    ValueError
+        If `sampic_reconstruct_time_dict(rec)` fails or returns a non-numeric value.
+    """
+    # Determine field names
+    if isinstance(batch, RecordBatch):
+        field_names = batch.schema.names
+    elif isinstance(batch, ak.highlevel.Array):
+        field_names = batch.fields
+    else:
+        raise TypeError(f"Unsupported batch type {type(batch)}; expected RecordBatch or ak.Array")
+
+    rec: Dict[str, Any] = {}
+    # Extract all fields
+    for col in field_names:
+        try:
+            if isinstance(batch, RecordBatch):
+                rec[col] = batch.column(col)[idx].as_py()
+            else:
+                rec[col] = np.asarray(batch[col])[idx]
+        except KeyError:
+            raise KeyError(f"Missing required field '{col}' in batch")
+        except IndexError:
+            raise IndexError(f"Index {idx} out of bounds for field '{col}'")
+
+    # Reconstruct timestamp
+    ts = sampic_reconstruct_time_dict(rec)
+    if not isinstance(ts, (int, float)):
+        raise ValueError(f"Reconstructed timestamp must be numeric, got {type(ts)}")
+    return float(ts), rec
+
+
 def check_time_ordering(
     file_path: Path, use_unix_time: bool = False, find_all: bool = False, batch_size: int = 100_000, root_tree: str = "sampic_hits"
 ) -> List[Tuple[int, float, float]]:
