@@ -91,6 +91,20 @@ def convert_df_with_schema(df: pd.DataFrame, schemaInfo: Dict = SAMPIC_Schema_In
             df[column] = df[column].astype(schemaInfo[column][0])
 
 
+def get_root_data_with_schema(df: pd.DataFrame, schemaInfo: Dict = SAMPIC_Schema_Info):
+    try:
+        ret_val = {}
+        for column in schemaInfo:
+            if schemaInfo[column][2] is not None:
+                ret_val[column] = np.array(df[column], dtype=schemaInfo[column][2])
+
+        return ret_val
+    except ValueError as e:
+        print(df["HITNumber"])
+        print(df["TriggerPosition"])
+        raise e
+
+
 @dataclass
 class SampicHeader:
     """
@@ -956,37 +970,6 @@ class SAMPIC_Run_Decoder:
         # Schema related objects
         # TODO: Change this to use info from the header
         schema = build_schema()
-
-        def get_root_data_with_schema(df):
-            try:
-                ret_val = {
-                    "HITNumber": np.array(df["HITNumber"], dtype=np.int32),
-                    "UnixTime": np.array(df["UnixTime"], dtype=np.double),
-                    "Channel": np.array(df["Channel"], dtype=np.int32),
-                    "Cell": np.array(df["Cell"], dtype=np.int32),
-                    "TimeStampA": np.array(df["TimeStampA"], dtype=np.int32),
-                    "TimeStampB": np.array(df["TimeStampB"], dtype=np.int32),
-                    "FPGATimeStamp": np.array(df["FPGATimeStamp"], dtype=np.uint64),
-                    "StartOfADCRamp": np.array(df["StartOfADCRamp"], dtype=np.int32),
-                    "RawTOTValue": np.array(df["RawTOTValue"], dtype=np.int32),
-                    "TOTValue": np.array(df["TOTValue"], dtype=np.int32),
-                    "PhysicalCell0Time": np.array(df["PhysicalCell0Time"], dtype=np.double),
-                    "OrderedCell0Time": np.array(df["OrderedCell0Time"], dtype=np.double),
-                    "Time": np.array(df["Time"], dtype=np.double),
-                    "Baseline": np.array(df["Baseline"], dtype=np.float32),
-                    "RawPeak": np.array(df["RawPeak"], dtype=np.float32),
-                    "Amplitude": np.array(df["Amplitude"], dtype=np.float32),
-                    "ADCCounterLatched": np.array(df["ADCCounterLatched"], dtype=np.int32),
-                    "DataSize": np.array(df["DataSize"], dtype=np.int32),
-                    "TriggerPosition": np.array(df["TriggerPosition"].tolist(), dtype=np.int32),
-                    "DataSample": np.array(df["DataSample"].tolist(), dtype=np.float32),
-                }
-
-                return ret_val
-            except ValueError as e:
-                print(df["HITNumber"])
-                print(df["TriggerPosition"])
-                raise e
 
         # Writers placeholders
         parquet_writer = None
