@@ -75,54 +75,226 @@ SAMPIC_Schema_Info = {
 }
 
 
-def build_schema(metadata: Dict[bytes, bytes] = None, schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info):
-    fields = [pa.field(name, schemaInfo[name][1]) for name in schemaInfo if schemaInfo[name][1] is not None]
+def build_schema(
+    metadata: Optional[Dict[bytes, bytes]] = None,
+    schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info,
+) -> pa.Schema:
+    """
+    Construct a PyArrow Schema from predefined field types and optional metadata.
+
+    This utility builds a fully-specified Arrow Schema by iterating over
+    a `schemaInfo` mapping of field names to type definitions.  It
+    includes only those fields whose PyArrow type is non-null, and
+    attaches any provided metadata as key/value byte pairs.
+
+    Parameters
+    ----------
+    metadata : dict of bytes->bytes, optional
+        Key/value metadata to attach to the schema (e.g. from file header).
+        If None, no metadata will be set on the schema.
+    schemaInfo : dict of str->tuple
+        Mapping from field name to a tuple defining:
+          - pandas dtype string (unused here)
+          - PyArrow DataType (used)
+          - NumPy dtype for ROOT output
+          - optional list/array size for array fields
+        Only entries where the PyArrow DataType is not None are used.
+
+    Returns
+    -------
+    pa.Schema
+        A PyArrow Schema containing all enabled fields and attached metadata.
+
+    Raises
+    ------
+    KeyError
+        If any key in `schemaInfo` is missing its PyArrow type entry.
+    """
+    # Build list of fields with valid PyArrow types
+    try:
+        fields = [pa.field(name, schemaInfo[name][1]) for name in schemaInfo if schemaInfo[name][1] is not None]
+    except KeyError as e:
+        raise KeyError(f"Field '{e.args[0]}' missing PyArrow type in schemaInfo")
+
     schema = pa.schema(fields)
 
+    # Attach metadata if provided
     if metadata is not None:
         schema = schema.with_metadata(metadata)
 
     return schema
 
 
-def convert_df_with_schema(df: pd.DataFrame, schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info):
-    for column in df:
-        if column in schemaInfo and schemaInfo[column][0] is not None:
-            df[column] = df[column].astype(schemaInfo[column][0])
+def convert_df_with_schema(df: pd.DataFrame, schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info) -> pd.DataFrame:
+    """
+    Cast DataFrame columns to types defined in the schema information.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input DataFrame whose columns should be converted in-place.
+    schemaInfo : dict of str -> tuple
+        Mapping of column names to schema tuples of the form:
+        (pandas_dtype, pyarrow_type, numpy_dtype, [optional array size]).
+        Only the pandas_dtype at index 0 is used for conversion when not None.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The same DataFrame with its columns cast to the specified pandas dtypes.
+
+    Notes
+    -----
+    - Columns not present in schemaInfo or with None pandas dtype are left unchanged.
+    - Conversion is done in-place; the returned DataFrame is the same object.
+    """
+    for col in df.columns:
+        dtype_info = schemaInfo.get(col)
+        if dtype_info is None:
+            continue
+        pandas_dtype = dtype_info[0]
+        if pandas_dtype:
+            df[col] = df[col].astype(pandas_dtype)
+    return df
 
 
-def get_root_data_with_schema(df: pd.DataFrame, schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info):
-    try:
-        ret_val = {}
-        for column in schemaInfo:
-            if schemaInfo[column][2] is not None:
-                ret_val[column] = np.array(df[column], dtype=schemaInfo[column][2])
+def get_root_data_with_schema(df: pd.DataFrame, schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info) -> Dict[str, np.ndarray]:
+    """
+    Prepare a dictionary of numpy arrays from a DataFrame for ROOT writing.
 
-        return ret_val
-    except ValueError as e:
-        print(df["HITNumber"])
-        print(df["TriggerPosition"])
-        raise e
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input DataFrame containing fields defined in the schema.
+    schemaInfo : dict of str -> tuple
+        Mapping of column names to schema tuples of the form:
+        (pandas_dtype, pyarrow_type, numpy_dtype, [optional array size]).
+        The numpy_dtype at index 2 is used for array construction when not None.
 
+    Returns
+    -------
+    dict
+        Mapping of column names to numpy.ndarray with appropriate dtype.
 
-def build_empty_root_data_with_schema(schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info):
-    ret_val = {}
-    for column in schemaInfo:
-        if schemaInfo[column][2] is not None:
-            if len(schemaInfo[column]) == 4:
-                ret_val[column] = np.empty((0, schemaInfo[column][3]), dtype=schemaInfo[column][2])
-            else:
-                ret_val[column] = np.empty(0, dtype=schemaInfo[column][2])
+    Raises
+    ------
+    ValueError
+        If conversion of any column fails due to incompatible data or dtype.
 
+    Notes
+    -----
+    - Only columns with a non-None numpy dtype in schemaInfo are included.
+    - Any ValueError during conversion prints the offending column names for debugging.
+    """
+    ret_val: Dict[str, np.ndarray] = {}
+    for col, info in schemaInfo.items():
+        numpy_dtype = None
+        if len(info) > 2:
+            numpy_dtype = info[2]
+        if numpy_dtype is None:
+            continue
+        try:
+            # Convert column to numpy array of target dtype
+            ret_val[col] = np.array(df[col].values, dtype=numpy_dtype)
+        except Exception as e:
+            # Debugging output
+            print(f"Conversion error for column '{col}': dtype {numpy_dtype}")
+            raise e
     return ret_val
 
 
-def prepare_header_metadata_in_bytes(metadata: Dict[str, object]) -> Dict[bytes, bytes]:
+def build_empty_root_data_with_schema(schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info) -> Dict[str, np.ndarray]:
+    """
+    Construct an empty data dictionary for ROOT branches based on schema.
+
+    Parameters
+    ----------
+    schemaInfo : dict of str -> tuple
+        Mapping of column names to schema tuples of the form:
+        (pandas_dtype, pyarrow_type, numpy_dtype, [optional array size]).
+        The numpy_dtype at index 2 and optional array size at index 3 are used.
+
+    Returns
+    -------
+    dict
+        Mapping of column names to empty numpy.ndarray with correct shape and dtype.
+
+    Notes
+    -----
+    - Scalar fields produce 1D arrays of length zero.
+    - Fixed-size array fields (length provided in schemaInfo[3]) produce 2D arrays
+      with shape (0, size).
+    """
+    ret_val: Dict[str, np.ndarray] = {}
+    for col, info in schemaInfo.items():
+        numpy_dtype = None
+        arr_size = None
+        if len(info) > 2:
+            numpy_dtype = info[2]
+        if len(info) > 3:
+            arr_size = info[3]
+        if numpy_dtype is None:
+            continue
+        if arr_size is not None:
+            # Fixed-length vector field
+            ret_val[col] = np.empty((0, arr_size), dtype=numpy_dtype)
+        else:
+            ret_val[col] = np.empty(0, dtype=numpy_dtype)
+    return ret_val
+
+
+def prepare_header_metadata_in_bytes(metadata: Dict[str, Any]) -> Dict[bytes, bytes]:
+    """
+    Convert a metadata dictionary of Python values to a bytes-to-bytes mapping suitable for Arrow.
+
+    This utility encodes string, datetime, integer, and boolean metadata values
+    into raw bytes for storage in Feather or Parquet file metadata.  Unsupported
+    keys are skipped with a warning.
+
+    Parameters
+    ----------
+    metadata : dict of str -> object
+        Mapping of metadata keys to Python values.  Supported keys and types:
+
+        - Text fields (ASCII strings):
+          'software_version', 'sampic_mezzanine_board_version',
+          'ctrl_fpga_firmware_version', 'sampling_frequency',
+          'hit_number_format', 'unix_time_format', 'data_format',
+          'trigger_position_format', 'data_samples_format'
+        - Timestamp field (datetime.datetime):
+          'timestamp'
+        - Integer fields (int):
+          'num_channels', 'enabled_channels_mask'
+        - Boolean flags (bool):
+          'reduced_data_type', 'without_waveform', 'tdc_like_files',
+          'inl_correction', 'adc_correction'
+
+    Returns
+    -------
+    dict of bytes -> bytes
+        Mapping of ASCII-encoded keys to packed byte values:
+        - String values → ASCII-encoded bytes
+        - Timestamp → little-endian IEEE-754 double of POSIX seconds
+        - Integers → little-endian uint32
+        - Booleans → single byte 0x01 (True) or 0x00 (False)
+
+    Raises
+    ------
+    ValueError
+        If a value has an unexpected type for a supported key.
+
+    Notes
+    -----
+    - Keys not recognized in the supported list are skipped with a printed warning.
+    - Use this mapping as the `schema.metadata` for PyArrow Schema or
+      as the `metadata` argument in Feather/Parquet writers.
+    """
     retVal: Dict[bytes, bytes] = {}
-    for key in metadata:
+
+    for key, val in metadata.items():
         new_key = key.encode('ascii')
 
-        # If string variable
+        # String fields
         if key in [
             'software_version',
             'sampic_mezzanine_board_version',
@@ -134,24 +306,42 @@ def prepare_header_metadata_in_bytes(metadata: Dict[str, object]) -> Dict[bytes,
             'trigger_position_format',
             'data_samples_format',
         ]:
-            new_val = metadata[key].encode('ascii')
-        # If timestamp variable
-        elif key in [
-            'timestamp',
-        ]:
-            print(type(metadata[key]))
-            new_val = struct.pack('<d', metadata[key].timestamp())
-        # If integer variable
+            if not isinstance(val, str):
+                raise ValueError(f"Expected str for metadata '{key}', got {type(val)}")
+            new_val = val.encode('ascii')
+
+        # Timestamp field
+        elif key == 'timestamp':
+            if not isinstance(val, datetime.datetime):
+                raise ValueError(f"Expected datetime for metadata 'timestamp', got {type(val)}")
+            # POSIX timestamp in seconds
+            new_val = struct.pack('<d', val.timestamp())
+
+        # Integer fields
         elif key in ['num_channels', 'enabled_channels_mask']:
-            new_val = struct.pack('<I', metadata[key])
-        # If boolean variable
-        elif key in ['reduced_data_type', 'without_waveform', 'tdc_like_files', 'inl_correction', 'adc_correction']:
-            new_val = b'\x01' if metadata[key] else b'\x00'
+            if not isinstance(val, int):
+                raise ValueError(f"Expected int for metadata '{key}', got {type(val)}")
+            new_val = struct.pack('<I', val)
+
+        # Boolean flags
+        elif key in [
+            'reduced_data_type',
+            'without_waveform',
+            'tdc_like_files',
+            'inl_correction',
+            'adc_correction',
+        ]:
+            if not isinstance(val, bool):
+                raise ValueError(f"Expected bool for metadata '{key}', got {type(val)}")
+            new_val = b'\x01' if val else b'\x00'
+
         else:
-            print(f"Unknown metadata field: {key}")
+            # Skip unknown keys
+            print(f"Warning: skipping unknown metadata field '{key}'")
             continue
 
         retVal[new_key] = new_val
+
     return retVal
 
 
