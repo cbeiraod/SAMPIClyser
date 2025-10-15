@@ -2088,21 +2088,116 @@ def sampic_reconstruct_time_dict(rec: dict) -> float:
     raise ValueError("Custom time reconstruction not implemented")
 
 
-def extract_ts_unix_time(batch, idx):
-    # batch may be RecordBatch or ak.Array
+def extract_ts_unix_time(batch: Union[RecordBatch, ak.highlevel.Array], idx: int) -> float:
+    """
+    Extract a single hit timestamp from the 'UnixTime' column in a batch.
+
+    This utility handles both PyArrow RecordBatch and Awkward Array inputs,
+    returning the timestamp as a native Python float.
+
+    Parameters
+    ----------
+    batch : RecordBatch or awkward.highlevel.Array
+        A batch of hit records containing a 'UnixTime' field.
+    idx : int
+        Zero-based index of the hit within the batch from which to extract
+        the timestamp.
+
+    Returns
+    -------
+    float
+        The Unix timestamp (in seconds) of the specified hit.
+
+    Raises
+    ------
+    KeyError
+        If the 'UnixTime' column is not present in the batch.
+    TypeError
+        If `batch` is not a supported type (neither RecordBatch nor Awkward Array).
+    IndexError
+        If `idx` is out of bounds for the batch.
+    """
+    # PyArrow RecordBatch path
     if isinstance(batch, RecordBatch):
-        return float(batch.column('UnixTime')[idx].as_py())
-    else:
-        return float(np.asarray(batch['UnixTime'])[idx])
+        try:
+            column = batch.column('UnixTime')
+        except KeyError:
+            raise KeyError("'UnixTime' column not found in RecordBatch")
+        # as_py() handles possible nulls; cast to float
+        return float(column[idx].as_py())
+
+    # Awkward Array path
+    if isinstance(batch, ak.highlevel.Array):
+        try:
+            arr = np.asarray(batch['UnixTime'])
+        except Exception:
+            raise KeyError("'UnixTime' field not found in Awkward Array")
+        return float(arr[idx])
+
+    # Unsupported batch type
+    raise TypeError(f"Unsupported batch type {type(batch)}, expected RecordBatch or ak.Array")
 
 
-def extract_ts_SAMPIC(batch, idx):
-    # call the SAMPIC time reconstruction
+def extract_ts_SAMPIC(batch: Union[RecordBatch, ak.highlevel.Array], idx: int) -> float:
+    """
+    Reconstruct a hit timestamp using SAMPIC-specific logic from a batch record.
+
+    This utility assembles all fields of a single hit record into a dictionary and
+    applies the `sampic_reconstruct_time_dict` function to compute the timestamp.
+    Supports both PyArrow RecordBatch and Awkward Array as batch inputs.
+
+    Parameters
+    ----------
+    batch : RecordBatch or awkward.highlevel.Array
+        A batch of hit records containing all necessary fields for time reconstruction.
+    idx : int
+        Zero-based index of the hit within the batch whose timestamp to reconstruct.
+
+    Returns
+    -------
+    float
+        The reconstructed hit timestamp (in seconds) as computed by SAMPIC logic.
+
+    Raises
+    ------
+    KeyError
+        If a required field is missing from the batch.
+    TypeError
+        If `batch` is neither a RecordBatch nor an Awkward Array.
+    IndexError
+        If `idx` is out of range for the provided batch.
+    ValueError
+        If `sampic_reconstruct_time_dict` fails or returns an invalid value.
+    """
     rec = {}
-    # assemble record fields as needed for reconstruction
-    for col in batch.schema.names if isinstance(batch, RecordBatch) else batch.fields:
-        rec[col] = batch.column(col)[idx].as_py() if isinstance(batch, RecordBatch) else np.asarray(batch[col])[idx]
-    return sampic_reconstruct_time_dict(rec)
+
+    # Determine available fields
+    if isinstance(batch, RecordBatch):
+        field_names = batch.schema.names
+    elif isinstance(batch, ak.highlevel.Array):
+        field_names = batch.fields
+    else:
+        raise TypeError(f"Unsupported batch type {type(batch)}; expected RecordBatch or ak.Array")
+
+    # Assemble record dict
+    for col in field_names:
+        try:
+            if isinstance(batch, RecordBatch):
+                value = batch.column(col)[idx].as_py()
+            else:
+                # awkward array supports numpy conversion
+                value = np.asarray(batch[col])[idx]
+        except KeyError:
+            raise KeyError(f"Missing required field '{col}' for time reconstruction")
+        except IndexError:
+            raise IndexError(f"Index {idx} out of bounds for field '{col}'")
+        rec[col] = value
+
+    # Compute timestamp
+    ts = sampic_reconstruct_time_dict(rec)
+    if not isinstance(ts, (int, float)):
+        raise ValueError(f"Reconstructed timestamp must be numeric, got {type(ts)}")
+    return float(ts)
 
 
 def check_time_ordering(
