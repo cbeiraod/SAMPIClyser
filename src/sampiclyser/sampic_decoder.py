@@ -195,7 +195,11 @@ def get_root_data_with_schema(df: pd.DataFrame, schemaInfo: Dict[str, Tuple] = S
             continue
         try:
             # Convert column to numpy array of target dtype
-            ret_val[col] = np.array(df[col].values, dtype=numpy_dtype)
+            # ret_val[col] = np.array(df[col].values, dtype=numpy_dtype)
+            if len(info) > 3:
+                ret_val[col] = np.array(df[col].tolist(), dtype=numpy_dtype)
+            else:
+                ret_val[col] = np.array(df[col], dtype=numpy_dtype)
         except Exception as e:
             # Debugging output
             print(f"Conversion error for column '{col}': dtype {numpy_dtype}")
@@ -312,7 +316,7 @@ def prepare_header_metadata_in_bytes(metadata: Dict[str, Any]) -> Dict[bytes, by
 
         # Timestamp field
         elif key == 'timestamp':
-            if not isinstance(val, datetime.datetime):
+            if not isinstance(val, datetime):
                 raise ValueError(f"Expected datetime for metadata 'timestamp', got {type(val)}")
             # POSIX timestamp in seconds
             new_val = struct.pack('<d', val.timestamp())
