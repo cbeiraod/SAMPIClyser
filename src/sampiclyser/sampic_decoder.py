@@ -117,6 +117,44 @@ def build_empty_root_data_with_schema(schemaInfo: Dict[str, Tuple] = SAMPIC_Sche
     return ret_val
 
 
+def prepare_header_metadata_in_bytes(metadata: Dict[str, object]) -> Dict[bytes, bytes]:
+    retVal: Dict[bytes, bytes] = {}
+    for key in metadata:
+        new_key = key.encode('ascii')
+
+        # If string variable
+        if key in [
+            'software_version',
+            'sampic_mezzanine_board_version',
+            'ctrl_fpga_firmware_version',
+            'sampling_frequency',
+            'hit_number_format',
+            'unix_time_format',
+            'data_format',
+            'trigger_position_format',
+            'data_samples_format',
+        ]:
+            new_val = metadata[key].encode('ascii')
+        # If timestamp variable
+        elif key in [
+            'timestamp',
+        ]:
+            print(type(metadata[key]))
+            new_val = struct.pack('<d', metadata[key].timestamp())
+        # If integer variable
+        elif key in ['num_channels', 'enabled_channels_mask']:
+            new_val = struct.pack('<I', metadata[key])
+        # If boolean variable
+        elif key in ['reduced_data_type', 'without_waveform', 'tdc_like_files', 'inl_correction', 'adc_correction']:
+            new_val = b'\x01' if metadata[key] else b'\x00'
+        else:
+            print(f"Unknown metadata field: {key}")
+            continue
+
+        retVal[new_key] = new_val
+    return retVal
+
+
 @dataclass
 class SampicHeader:
     """
