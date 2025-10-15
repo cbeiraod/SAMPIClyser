@@ -105,6 +105,15 @@ def get_root_data_with_schema(df: pd.DataFrame, schemaInfo: Dict[str, Tuple] = S
         raise e
 
 
+def build_empty_root_data_with_schema(schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info):
+    ret_val = {}
+    for column in schemaInfo:
+        if schemaInfo[column][2] is not None:
+            ret_val[column] = np.empty(0, dtype=schemaInfo[column][2])
+
+    return ret_val
+
+
 @dataclass
 class SampicHeader:
     """
