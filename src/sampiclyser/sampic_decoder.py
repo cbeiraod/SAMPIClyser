@@ -85,6 +85,12 @@ def build_schema(metadata=None):
     return schema
 
 
+def convert_df_with_schema(df: pd.DataFrame, schemaInfo: Dict = SAMPIC_Schema_Info):
+    for column in df:
+        if column in schemaInfo and schemaInfo[column][0] is not None:
+            df[column] = df[column].astype(schemaInfo[column][0])
+
+
 @dataclass
 class SampicHeader:
     """
@@ -950,28 +956,6 @@ class SAMPIC_Run_Decoder:
         # Schema related objects
         # TODO: Change this to use info from the header
         schema = build_schema()
-
-        def convert_df_with_schema(df):
-            df["HITNumber"] = df["HITNumber"].astype("int32")
-            df["UnixTime"] = df["UnixTime"].astype("float64")
-            df["Channel"] = df["Channel"].astype("int32")
-            df["Cell"] = df["Cell"].astype("int32")
-            df["TimeStampA"] = df["TimeStampA"].astype("int32")
-            df["TimeStampB"] = df["TimeStampB"].astype("int32")
-            df["FPGATimeStamp"] = df["FPGATimeStamp"].astype("uint64")
-            df["StartOfADCRamp"] = df["StartOfADCRamp"].astype("int32")
-            df["RawTOTValue"] = df["RawTOTValue"].astype("int32")
-            df["TOTValue"] = df["TOTValue"].astype("int32")
-            df["PhysicalCell0Time"] = df["PhysicalCell0Time"].astype("float64")
-            df["OrderedCell0Time"] = df["OrderedCell0Time"].astype("float64")
-            df["Time"] = df["Time"].astype("float64")
-            df["Baseline"] = df["Baseline"].astype("float32")
-            df["RawPeak"] = df["RawPeak"].astype("float32")
-            df["Amplitude"] = df["Amplitude"].astype("float32")
-            df["ADCCounterLatched"] = df["ADCCounterLatched"].astype("int32")
-            df["DataSize"] = df["DataSize"].astype("int32")
-            # pa.field("TriggerPosition",  pa.list_(pa.int32())),
-            # pa.field("DataSample",  pa.list_(pa.float32())),
 
         def get_root_data_with_schema(df):
             try:
