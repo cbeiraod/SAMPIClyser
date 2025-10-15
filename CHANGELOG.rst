@@ -4,6 +4,7 @@ Changelog
 Current (2025-10-13)
 --------------------
 
+* Modularised the schema code for processing data in a more unified and central way
 * Added get_file_metadata to the default module imports
 * Added CLI for checking time ordering
 * Added function to determine if hits are time-ordered or not

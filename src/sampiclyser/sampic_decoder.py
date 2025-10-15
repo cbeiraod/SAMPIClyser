@@ -47,6 +47,43 @@ from natsort import natsorted
 from pyarrow.ipc import new_file
 from termcolor import colored
 
+# SchemaInfo
+SAMPIC_Schema_Info = {
+    # Format:
+    # Name: (pandas, pyarrow, numpy for root)
+    "HITNumber": ("int32", pa.int32(), np.int32),
+    "UnixTime": ("float64", pa.float64(), np.double),
+    "Channel": ("int32", pa.int32(), np.int32),
+    "Cell": ("int32", pa.int32(), np.int32),
+    "TimeStampA": ("int32", pa.int32(), np.int32),
+    "TimeStampB": ("int32", pa.int32(), np.int32),
+    "FPGATimeStamp": ("uint64", pa.uint64(), np.double),
+    "StartOfADCRamp": ("int32", pa.int32(), np.int32),
+    "RawTOTValue": ("int32", pa.int32(), np.int32),
+    "TOTValue": ("int32", pa.int32(), np.int32),
+    "PhysicalCell0Time": ("float64", pa.float64(), np.double),
+    "OrderedCell0Time": ("float64", pa.float64(), np.double),
+    "Time": ("float64", pa.float64(), np.double),
+    "Baseline": ("float32", pa.float32(), np.float32),
+    "RawPeak": ("float32", pa.float32(), np.float32),
+    "Amplitude": ("float32", pa.float32(), np.float32),
+    "ADCCounterLatched": ("int32", pa.int32(), np.int32),
+    "DataSize": ("int32", pa.int32(), np.int32),
+    "TriggerPosition": (None, pa.list_(pa.int32()), np.int32),
+    "DataSample": (None, pa.list_(pa.float32()), np.float32),
+    # … etc …
+}
+
+
+def build_schema(metadata=None):
+    fields = [pa.field(name, SAMPIC_Schema_Info[name][1]) for name in SAMPIC_Schema_Info if SAMPIC_Schema_Info[name][1] is not None]
+    schema = pa.schema(fields)
+
+    if metadata is not None:
+        schema = schema.with_metadata(metadata)
+
+    return schema
+
 
 @dataclass
 class SampicHeader:
@@ -912,31 +949,7 @@ class SAMPIC_Run_Decoder:
 
         # Schema related objects
         # TODO: Change this to use info from the header
-        schema = pa.schema(
-            [
-                pa.field("HITNumber", pa.int32()),
-                pa.field("UnixTime", pa.float64()),
-                pa.field("Channel", pa.int32()),
-                pa.field("Cell", pa.int32()),
-                pa.field("TimeStampA", pa.int32()),
-                pa.field("TimeStampB", pa.int32()),
-                pa.field("FPGATimeStamp", pa.uint64()),
-                pa.field("StartOfADCRamp", pa.int32()),
-                pa.field("RawTOTValue", pa.int32()),
-                pa.field("TOTValue", pa.int32()),
-                pa.field("PhysicalCell0Time", pa.float64()),
-                pa.field("OrderedCell0Time", pa.float64()),
-                pa.field("Time", pa.float64()),
-                pa.field("Baseline", pa.float32()),
-                pa.field("RawPeak", pa.float32()),
-                pa.field("Amplitude", pa.float32()),
-                pa.field("ADCCounterLatched", pa.int32()),
-                pa.field("DataSize", pa.int32()),
-                pa.field("TriggerPosition", pa.list_(pa.int32())),
-                pa.field("DataSample", pa.list_(pa.float32())),
-                # … etc …
-            ]
-        )
+        schema = build_schema()
 
         def convert_df_with_schema(df):
             df["HITNumber"] = df["HITNumber"].astype("int32")
