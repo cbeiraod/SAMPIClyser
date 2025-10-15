@@ -26,6 +26,7 @@ import itertools
 import math
 import struct
 from collections import Counter
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from typing import Dict
@@ -45,8 +46,8 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
-
-# import pyarrow.ipc as ipc
+import pyarrow.feather as feather
+import pyarrow.ipc as ipc
 import pyarrow.parquet as pq
 import uproot
 from matplotlib.axes import Axes
@@ -58,6 +59,11 @@ from natsort import natsorted
 from pyarrow import RecordBatch
 from scipy.signal import resample
 from scipy.signal import resample_poly
+
+from sampiclyser.sampic_decoder import SAMPIC_Schema_Info
+from sampiclyser.sampic_decoder import build_empty_root_data_with_schema
+from sampiclyser.sampic_decoder import build_schema
+from sampiclyser.sampic_decoder import prepare_header_metadata_in_bytes
 
 sampiclyser_style = hep.style.CMS
 
@@ -2389,3 +2395,149 @@ def check_time_ordering(
             hit_idx += 1
 
     return violations
+
+
+@contextmanager
+def reprocess_data_files(
+    input_path: Path,
+    output_feather_path: Optional[Path] = None,
+    output_parquet_path: Optional[Path] = None,
+    output_root_path: Optional[Path] = None,
+    root_tree: str = "sampic_hits",
+    schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info,
+    new_columns: Optional[List[str]] = None,
+    restrict_columns: Optional[List[str]] = None,
+) -> Iterator[
+    Tuple[List[str], pa.Schema, Optional[ipc.RecordBatchFileWriter], Optional[pq.ParquetWriter], Optional[uproot.writing.WritableTree]]
+]:
+    """
+    Context manager to open/prepare readers and writers for re-processing SAMPIC data.
+
+    Reads schema & metadata from `input_path` (Parquet, Feather, or ROOT),
+    optionally restricts or extends the column list, then yields:
+      1. `columns`: final list of column names
+      2. `schema`: Arrow Schema with metadata embedded
+      3. `feather_writer`: IPC writer for Feather (or None)
+      4. `parquet_writer`: ParquetWriter instance (or None)
+      5. `root_tree_obj`: Writable ROOT TTree (or None)
+
+    Upon exit, finalizes metadata and closes all writers.
+
+    Parameters
+    ----------
+    input_path : pathlib.Path
+        Path to an existing decoded SAMPIC input file. Supported extensions:
+        .parquet/.pq, .feather, .root.
+    output_feather_path : pathlib.Path or None, optional
+        Path for the output Feather file; if None, Feather writing is disabled.
+    output_parquet_path : pathlib.Path or None, optional
+        Path for the output Parquet file; if None, Parquet writing is disabled.
+    output_root_path : pathlib.Path or None, optional
+        Path for the output ROOT file; if None, ROOT writing is disabled.
+    root_tree : str
+        Name of the TTree for ROOT I/O (default: "sampic_hits").
+    schemaInfo
+        Mapping of column names to (pandas_dtype, pa_type, numpy_dtype, optional_size).
+        Used to rebuild the Arrow schema if `new_columns` or `restrict_columns` is given.
+    new_columns : list of str
+        Extra column names to append to those discovered in `input_path`.
+    restrict_columns : list of str
+        If given, only the intersection of this list and the discovered columns is used.
+
+    Yields
+    ------
+    columns : list of str
+        The final ordered list of column names for downstream reads/writes.
+    schema : pa.Schema
+        Arrow schema for reading and writing data.
+    feather_writer : pa.ipc.RecordBatchFileWriter or None
+        Open IPC writer for Feather, or None if disabled.
+    parquet_writer : pq.ParquetWriter or None
+        Open ParquetWriter, or None if disabled.
+    root_tree_obj : uproot.writing.WritableTree or None
+        Writable TTree for ROOT output, or None if disabled.
+
+    Raises
+    ------
+    ValueError
+        If `input_path` has unsupported suffix.
+
+    Notes
+    -----
+    - Input metadata (from get_file_metadata) is embedded in the Arrow schema
+      and, upon context exit, written into the ROOT `metadata` TTree if used.
+    - All open writers are closed automatically in the `finally` block.
+    - If both `new_columns` and `restrict_columns` are None, the input file’s
+      native schema is preserved; otherwise a new schema is built via `build_schema`.
+    """
+    # Initialize writers
+    feather_writer = None
+    parquet_writer = None
+    root_tree_obj = None
+    froot = None
+    sink = None
+
+    # Determine input format and read metadata
+    input_suffix = input_path.suffix.lower()
+    metadata = get_file_metadata(input_path)
+    metadata_bytes = prepare_header_metadata_in_bytes(metadata)
+    rebuild_schema = False
+
+    # Read existing schema/columns
+    if input_suffix in ('.parquet', '.pq'):
+        pqf = pq.ParquetFile(str(input_path))
+        columns = pqf.schema_arrow.names
+        schema = pqf.schema_arrow
+    elif input_suffix == '.feather':
+        rf = feather.read_table(str(input_path), memory_map=True)
+        columns = rf.schema.names
+        schema = rf.schema
+    elif input_suffix == '.root':
+        reader = uproot.open(str(input_path))
+        columns = list(reader[root_tree].keys())
+        reader.close()
+        rebuild_schema = True
+    else:
+        raise ValueError(f"Unsupported input format: {input_suffix}. Expected one of ['.parquet', '.pq', '.feather', '.root']")
+
+    # Apply column restrictions or additions
+    if restrict_columns is not None or new_columns is not None or rebuild_schema:
+        if restrict_columns is not None:
+            columns = [c for c in columns if c in restrict_columns]
+        if new_columns is not None:
+            columns = columns + [c for c in new_columns if c not in columns]
+        schema = build_schema(metadata=metadata_bytes, schemaInfo=schemaInfo)
+
+    try:
+        # Open output writers
+        if output_parquet_path:
+            # parquet_writer = pq.ParquetWriter(str(output_path), schema,
+            #                           version='2.0', use_deprecated_int96_timestamps=False,
+            #                           metadata=metadata)
+            parquet_writer = pq.ParquetWriter(str(output_parquet_path), schema)
+        if output_feather_path:
+            sink = pa.OSFile(str(output_feather_path), 'wb')
+            feather_writer = ipc.new_file(sink, schema)
+        if output_root_path:
+            froot = uproot.recreate(output_root_path)
+            froot[root_tree] = build_empty_root_data_with_schema(schemaInfo=schemaInfo)
+            root_tree_obj = froot[root_tree]
+
+        yield (columns, schema, feather_writer, parquet_writer, root_tree_obj)
+
+    finally:
+        # Write metadata TTree for ROOT
+        if root_tree_obj is not None and output_root_path:
+            # Convert to Awkward Arrays of strings for variable-length support
+            keys = ak.from_iter(list(metadata.keys()), highlevel=True)
+            vals = ak.from_iter([str(v) for v in metadata.values()], highlevel=True)
+
+            froot['metadata'] = {'key': keys, 'value': vals}
+            froot.close()
+        # Close Parquet
+        if parquet_writer is not None:
+            parquet_writer.close()
+        # Close Feather
+        if feather_writer is not None:
+            feather_writer.close()
+            sink.close()
