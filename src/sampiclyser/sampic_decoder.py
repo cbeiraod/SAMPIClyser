@@ -50,7 +50,7 @@ from termcolor import colored
 # SchemaInfo
 SAMPIC_Schema_Info = {
     # Format:
-    # Name: (pandas, pyarrow, numpy for root)
+    # Name: (pandas, pyarrow, numpy for root, optional array size)
     "HITNumber": ("int32", pa.int32(), np.int32),
     "UnixTime": ("float64", pa.float64(), np.double),
     "Channel": ("int32", pa.int32(), np.int32),
@@ -69,8 +69,8 @@ SAMPIC_Schema_Info = {
     "Amplitude": ("float32", pa.float32(), np.float32),
     "ADCCounterLatched": ("int32", pa.int32(), np.int32),
     "DataSize": ("int32", pa.int32(), np.int32),
-    "TriggerPosition": (None, pa.list_(pa.int32()), np.int32),
-    "DataSample": (None, pa.list_(pa.float32()), np.float32),
+    "TriggerPosition": (None, pa.list_(pa.int32()), np.int32, 64),
+    "DataSample": (None, pa.list_(pa.float32()), np.float32, 64),
     # … etc …
 }
 
@@ -109,7 +109,10 @@ def build_empty_root_data_with_schema(schemaInfo: Dict[str, Tuple] = SAMPIC_Sche
     ret_val = {}
     for column in schemaInfo:
         if schemaInfo[column][2] is not None:
-            ret_val[column] = np.empty(0, dtype=schemaInfo[column][2])
+            if len(schemaInfo[column]) == 4:
+                ret_val[column] = np.empty((0, schemaInfo[column][3]), dtype=schemaInfo[column][2])
+            else:
+                ret_val[column] = np.empty(0, dtype=schemaInfo[column][2])
 
     return ret_val
 
