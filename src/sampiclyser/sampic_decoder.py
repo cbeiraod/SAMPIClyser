@@ -75,7 +75,7 @@ SAMPIC_Schema_Info = {
 }
 
 
-def build_schema(metadata=None, schemaInfo: Dict = SAMPIC_Schema_Info):
+def build_schema(metadata: Dict[str, object] = None, schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info):
     fields = [pa.field(name, schemaInfo[name][1]) for name in schemaInfo if schemaInfo[name][1] is not None]
     schema = pa.schema(fields)
 
@@ -85,13 +85,13 @@ def build_schema(metadata=None, schemaInfo: Dict = SAMPIC_Schema_Info):
     return schema
 
 
-def convert_df_with_schema(df: pd.DataFrame, schemaInfo: Dict = SAMPIC_Schema_Info):
+def convert_df_with_schema(df: pd.DataFrame, schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info):
     for column in df:
         if column in schemaInfo and schemaInfo[column][0] is not None:
             df[column] = df[column].astype(schemaInfo[column][0])
 
 
-def get_root_data_with_schema(df: pd.DataFrame, schemaInfo: Dict = SAMPIC_Schema_Info):
+def get_root_data_with_schema(df: pd.DataFrame, schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info):
     try:
         ret_val = {}
         for column in schemaInfo:
