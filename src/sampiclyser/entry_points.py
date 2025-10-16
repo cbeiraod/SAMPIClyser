@@ -848,6 +848,12 @@ def check_time_ordering(
     default=1.5,
     help='Size, in seconds, of the window to consider for reordering the hits. We recommend setting to the largest time difference observed in the file. Setting this number larger or to None will make the reordering window bigger meaning more hits will have to be stored in memory for the reordering operation, slowing down the process and increasing system requirements. Default: 1.5.',
 )
+@click.option(
+    '--fast',
+    'fast',
+    is_flag=True,
+    help='If set, use the new conversion to ROOT which does not go through a pandas dataframe.',
+)
 def reorder_data(
     decoded_file: Path,
     parquet_path: Path | None,
@@ -858,6 +864,7 @@ def reorder_data(
     batch_size: int,
     compactify: bool,
     reorder_window: float,
+    fast: bool,
 ):
     """
     Reprocess a decoded SAMPIC run file and produce new output files with the hits reordered in time.
@@ -885,6 +892,7 @@ def reorder_data(
                 output_root_path=root_path,
                 root_tree=root_tree,
                 batch_size=batch_size,
+                fast=fast,
             )
     else:
         # Process hits one by one and save into output files

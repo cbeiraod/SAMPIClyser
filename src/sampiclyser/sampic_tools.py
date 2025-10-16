@@ -2111,7 +2111,6 @@ def sampic_reconstruct_time_dict(rec: dict) -> float:
     """
     # Placeholder for custom SAMPIC time reconstruction logic
     # Must return a float timestamp for a hit record `rec`
-    # return rec['UnixTime']
     raise ValueError("Custom time reconstruction not implemented")
 
 
@@ -2697,6 +2696,92 @@ def reorder_hits(
             _write_to_outputs(write_record, schema, schemaInfo, feather_writer, parquet_writer, root_tree_obj)
 
 
+# TODO: Update this function to use the schema info to decide if jagged branches are allowed or not
+def prepare_root_dict_from_recordbatch(record_batch: RecordBatch) -> Dict[str, np.ndarray]:
+    """
+    Convert an Arrow RecordBatch into a dict of NumPy arrays for ROOT output.
+
+    This utility transforms each column in the given RecordBatch into a NumPy
+    array (scalar or fixed-size vector) suitable for writing to a ROOT TTree
+    without producing jagged (variable-length) branches.  It handles:
+
+    1. Primitive (scalar) arrays → 1D NumPy arrays of matching dtype.
+    2. Fixed-size list arrays → 2D NumPy arrays of shape (n_rows, list_size).
+    3. Other types (e.g., variable-length lists) → stacked 2D arrays via vstack.
+
+    Parameters
+    ----------
+    record_batch : pyarrow.RecordBatch
+        Arrow RecordBatch containing the fields to convert.  Must include
+        all columns present in the desired output schema.
+
+    Returns
+    -------
+    out : dict of str -> numpy.ndarray
+        Mapping from column name to a NumPy array:
+          - Scalar columns: shape (n_rows,)
+          - Fixed-size list columns: shape (n_rows, list_size)
+          - Jagged-list fallback: shape (n_rows, max_length) padded by stacking
+
+    Raises
+    ------
+    ValueError
+        If a fixed-size list column cannot be reshaped to (n_rows, list_size).
+    TypeError
+        If the RecordBatch contains unsupported or nested types.
+
+    Examples
+    --------
+    >>> import pyarrow as pa
+    >>> batch = pa.RecordBatch.from_arrays([
+    ...     pa.array([1, 2, 3], type=pa.int32()),
+    ...     pa.FixedSizeListArray.from_arrays(pa.array([0,1, 2,3, 4,5], type=pa.int32()), list_size=2)
+    ... ], names=['chan','trigger'])
+    >>> out = prepare_root_dict_from_recordbatch(batch)
+    >>> out['chan'].shape
+    (3,)
+    >>> out['trigger'].shape
+    (3, 2)
+    """
+    out: Dict[str, np.ndarray] = {}
+    n_rows = record_batch.num_rows
+
+    for col in record_batch.schema.names:
+        arr = record_batch.column(col)
+        dtype = arr.type
+
+        # 1) Primitive (scalar) columns
+        if pa.types.is_primitive(dtype):
+            # zero_copy_only=False to allow fallback copies
+            # out[col] = arr.to_numpy(zero_copy_only=False)
+            out[col] = arr.to_numpy()
+
+        # 2) Fixed-size list columns
+        elif pa.types.is_fixed_size_list(dtype):
+            values_arr = arr.values  # TODO: I have done this conversion elsewhere without having to cast to flat and not using values...
+            flat = values_arr.to_numpy(zero_copy_only=False)
+            list_size = dtype.list_size
+            try:
+                out[col] = flat.reshape(n_rows, list_size)
+            except Exception as e:
+                raise ValueError(f"Cannot reshape column '{col}' of length {flat.size} " f"into ({n_rows},{list_size}): {e}")
+
+        # 3) Fallback for other (e.g. variable-length) list types
+        elif pa.types.is_list(dtype) or pa.types.is_large_list(dtype):
+            # convert to Python nested lists then stack
+            pylist = arr.to_pylist()
+            try:
+                out[col] = np.vstack(pylist)
+            except Exception as e:
+                raise ValueError(f"Failed to vstack variable-length column '{col}': {e}")
+
+        else:
+            # Unsupported nested or struct types
+            raise TypeError(f"Unsupported column type for '{col}': {dtype}")
+
+    return out
+
+
 def reprocess_noop(
     input_path: Path,
     output_feather_path: Optional[Path] = None,
@@ -2705,6 +2790,7 @@ def reprocess_noop(
     root_tree: str = "sampic_hits",
     batch_size: int = 100_000,
     schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info,
+    fast: bool = False,
 ) -> None:
     """
     A “no-op” reprocessor that copies Sampic data from one format to another in batches.
@@ -2733,6 +2819,8 @@ def reprocess_noop(
         Number of rows/entries to read per batch from the input.
     schemaInfo : dict, default SAMPIC_Schema_Info
         Mapping of field names to type definitions used for ROOT dtype.
+    fast : bool, default False
+        If set, use the newer faster ROOT conversion algorithm which does not go through a pandas dataframe
 
     Returns
     -------
@@ -2793,6 +2881,9 @@ def reprocess_noop(
             # 4) Write out in ROOT
             if root_tree_obj:
                 # fastest: avoid pandas roundtrip if possible
-                df = record_batch.to_pandas()
-                root_data = get_root_data_with_schema(df, schemaInfo=schemaInfo)
-                root_tree_obj.extend(root_data)
+                if not fast:
+                    df = record_batch.to_pandas()
+                    root_data = get_root_data_with_schema(df, schemaInfo=schemaInfo)
+                    root_tree_obj.extend(root_data)
+                else:
+                    root_tree_obj.extend(prepare_root_dict_from_recordbatch(record_batch))
