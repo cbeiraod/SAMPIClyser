@@ -66,6 +66,7 @@ from scipy.signal import resample_poly
 from sampiclyser.sampic_decoder import SAMPIC_Schema_Info
 from sampiclyser.sampic_decoder import build_empty_root_data_with_schema
 from sampiclyser.sampic_decoder import build_schema
+from sampiclyser.sampic_decoder import get_root_data_with_schema
 from sampiclyser.sampic_decoder import prepare_header_metadata_in_bytes
 
 sampiclyser_style = hep.style.CMS
@@ -2110,7 +2111,7 @@ def sampic_reconstruct_time_dict(rec: dict) -> float:
     """
     # Placeholder for custom SAMPIC time reconstruction logic
     # Must return a float timestamp for a hit record `rec`
-    return rec['UnixTime']
+    # return rec['UnixTime']
     raise ValueError("Custom time reconstruction not implemented")
 
 
@@ -2694,3 +2695,104 @@ def reorder_hits(
         while heap:
             write_record = heapq.heappop(heap).record
             _write_to_outputs(write_record, schema, schemaInfo, feather_writer, parquet_writer, root_tree_obj)
+
+
+def reprocess_noop(
+    input_path: Path,
+    output_feather_path: Optional[Path] = None,
+    output_parquet_path: Optional[Path] = None,
+    output_root_path: Optional[Path] = None,
+    root_tree: str = "sampic_hits",
+    batch_size: int = 100_000,
+    schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info,
+) -> None:
+    """
+    A “no-op” reprocessor that copies Sampic data from one format to another in batches.
+
+    Reads the same columns from `input_path` (Parquet, Feather, or ROOT) and
+    writes them unmodified to any of the enabled outputs (Feather, Parquet, or ROOT),
+    streaming in `batch_size` chunks.  Metadata is inherited and re-emitted
+    automatically, so this can convert file formats or update compression, etc.
+
+    Parameters
+    ----------
+    input_path : pathlib.Path
+        Path to the input decoded SAMPIC data file.  Supported suffixes:
+        `.parquet`/`.pq`, `.feather`, or `.root`.  For ROOT, `root_tree`
+        must point to an existing TTree of hits.
+    output_feather_path : pathlib.Path or None, default None
+        If provided, write output as an Arrow IPC/Feather file.
+    output_parquet_path : pathlib.Path or None, default None
+        If provided, write output as a Parquet file.
+    output_root_path : pathlib.Path or None, default None
+        If provided, write output as a ROOT file with the same TTree name
+        plus a metadata TTree.
+    root_tree : str, default "sampic_hits"
+        Name of the hit TTree for ROOT input/output.
+    batch_size : int, default 100000
+        Number of rows/entries to read per batch from the input.
+    schemaInfo : dict, default SAMPIC_Schema_Info
+        Mapping of field names to type definitions used for ROOT dtype.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    RuntimeError
+        If no output path is specified.
+    ValueError
+        If required columns are missing or conversion fails.
+
+    Notes
+    -----
+    - This performs **no** transformation on the data itself—fields,
+      datatypes, and ordering are preserved.
+    - For ROOT output, array columns are converted via
+      `get_root_data_with_schema` to fixed-length NumPy vectors.
+    - Metadata from the input file is propagated to all output formats.
+    - Parquet and Feather writing use PyArrow writers with an explicit schema.
+    """
+    # Ensure at least one output
+    if not any([output_feather_path, output_parquet_path, output_root_path]):
+        raise RuntimeError("Must specify at least one output")
+
+    # Use context manager for opening files and writers
+    with reprocess_data_files(
+        input_path=input_path,
+        output_feather_path=output_feather_path,
+        output_parquet_path=output_parquet_path,
+        output_root_path=output_root_path,
+        root_tree=root_tree,
+        schemaInfo=schemaInfo,
+    ) as (columns, schema, feather_writer, parquet_writer, root_tree_obj):
+        # Stream input
+        for batch in open_hit_reader(input_path, cols=columns, batch_size=batch_size, root_tree=root_tree):
+            table = None
+            df = None
+            record_batch = None
+
+            # 1) Normalize to a RecordBatch
+            if isinstance(batch, RecordBatch):
+                record_batch = batch
+            else:
+                arrays = [np.asarray(batch[col]) for col in columns]
+                record_batch = RecordBatch.from_arrays(arrays, columns)
+
+            # 2) Write out in Feather IPC (full batches)
+            if feather_writer:
+                feather_writer.write_batch(record_batch)
+
+            # 3) Write out in Parquet (full batches)
+            if parquet_writer:
+                table = pa.Table.from_batches([record_batch], schema=schema)
+                # table = pa.Table.from_pandas(df, schema=schema, preserve_index=False)
+                parquet_writer.write_table(table)
+
+            # 4) Write out in ROOT
+            if root_tree_obj:
+                # fastest: avoid pandas roundtrip if possible
+                df = record_batch.to_pandas()
+                root_data = get_root_data_with_schema(df, schemaInfo=schemaInfo)
+                root_tree_obj.extend(root_data)
