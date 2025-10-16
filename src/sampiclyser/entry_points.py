@@ -906,3 +906,53 @@ def reorder_data(
             batch_size=batch_size,
             max_time_offset=reorder_window,
         )
+
+
+@cli.command()
+@click.argument('decoded_file', type=click.Path(exists=True, path_type=Path))
+@click.option('--parquet', '-p', 'parquet_path', type=click.Path(path_type=Path), help='Output Parquet file')
+@click.option('--feather', '-f', 'feather_path', type=click.Path(path_type=Path), help='Output Feather file')
+@click.option('--root', '-r', 'root_path', type=click.Path(path_type=Path), help='Output ROOT file')
+@click.option(
+    '--root-tree',
+    'root_tree',
+    type=str,
+    default="sampic_hits",
+    help='The name of the root ttree under which to save the hit data. Default: sampic_hits',
+)
+@click.option(
+    '--batch-size',
+    'batch_size',
+    type=int,
+    default=100000,
+    help='Number of hits to read at once, as a batch, from disk. Default: 100 000. You should not need to tune this parameter unless in a memory constrained system or searching for ultimate performance.',
+)
+@click.option(
+    '--fast',
+    'fast',
+    is_flag=True,
+    help='If set, use the new conversion to ROOT which does not go through a pandas dataframe.',
+)
+def convert_format(
+    decoded_file: Path,
+    parquet_path: Path | None,
+    feather_path: Path | None,
+    root_path: Path | None,
+    root_tree: str,
+    batch_size: int,
+    fast: bool,
+):
+    """
+    Convert a decoded SAMPIC run file and produce new output files in specified formats.
+    """
+
+    # Reprocess input file and store in batches into final output files
+    reprocess_noop(
+        decoded_file,
+        output_feather_path=feather_path,
+        output_parquet_path=parquet_path,
+        output_root_path=root_path,
+        root_tree=root_tree,
+        batch_size=batch_size,
+        fast=fast,
+    )
