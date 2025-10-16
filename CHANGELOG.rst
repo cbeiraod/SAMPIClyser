@@ -4,6 +4,7 @@ Changelog
 Current (2025-10-16)
 --------------------
 
+* Added an entry point to reorder the hits in the data files
 * Added a no-op function that streams through a data file and rewrites the data in new output files
 * Added a function to reprocess data files and reorder the hits so that they are time ordered
 * Added a context manager for reprocessing data files

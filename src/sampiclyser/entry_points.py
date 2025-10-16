@@ -28,6 +28,7 @@ entry points or imported directly into other Python code.
 """
 
 import datetime
+import tempfile
 from pathlib import Path
 
 import click
@@ -35,6 +36,7 @@ import matplotlib.pyplot as plt
 
 import sampiclyser
 import sampiclyser.sampic_convert_script
+from sampiclyser.sampic_tools import reprocess_noop
 
 
 @click.group()
@@ -805,3 +807,94 @@ def check_time_ordering(
             raise RuntimeError(f"Found {len(out_of_order)} hits out of order")
     else:
         print("All hits are ordered")
+
+
+@cli.command()
+@click.argument('decoded_file', type=click.Path(exists=True, path_type=Path))
+@click.option('--parquet', '-p', 'parquet_path', type=click.Path(path_type=Path), help='Output Parquet file')
+@click.option('--feather', '-f', 'feather_path', type=click.Path(path_type=Path), help='Output Feather file')
+@click.option('--root', '-r', 'root_path', type=click.Path(path_type=Path), help='Output ROOT file')
+@click.option(
+    '--use-unix',
+    'use_unix',
+    is_flag=True,
+    help='If set, use the unix timestamp for determining hit order instead of using SAMPIC reconstructed time',
+)
+@click.option(
+    '--root-tree',
+    'root_tree',
+    type=str,
+    default="sampic_hits",
+    help='The name of the root ttree under which to save the hit data. Default: sampic_hits',
+)
+@click.option(
+    '--batch-size',
+    'batch_size',
+    type=int,
+    default=100000,
+    help='Number of hits to read at once, as a batch, from disk. Default: 100 000. You should not need to tune this parameter unless in a memory constrained system or searching for ultimate performance.',
+)
+@click.option(
+    '--compactify',
+    '-c',
+    'compactify',
+    is_flag=True,
+    help='If set, the data will be reordered into a temporary file (hit by hit operation) and then the temporary file will be processed batch by batch into the final files, allowing possible optimized file writing.',
+)
+@click.option(
+    '--reorder-window',
+    'reorder_window',
+    type=float,
+    default=1.5,
+    help='Size, in seconds, of the window to consider for reordering the hits. We recommend setting to the largest time difference observed in the file. Setting this number larger or to None will make the reordering window bigger meaning more hits will have to be stored in memory for the reordering operation, slowing down the process and increasing system requirements. Default: 1.5.',
+)
+def reorder_data(
+    decoded_file: Path,
+    parquet_path: Path | None,
+    feather_path: Path | None,
+    root_path: Path | None,
+    use_unix: bool,
+    root_tree: str,
+    batch_size: int,
+    compactify: bool,
+    reorder_window: float,
+):
+    """
+    Reprocess a decoded SAMPIC run file and produce new output files with the hits reordered in time.
+    """
+
+    if compactify:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_file = Path(tmp_dir) / "tmp.pq"
+
+            # Process hits one by one and save into temporary parquet file
+            sampiclyser.reorder_hits(
+                decoded_file,
+                output_parquet_path=tmp_file,
+                root_tree=root_tree,
+                use_unix_time=use_unix,
+                batch_size=batch_size,
+                max_time_offset=reorder_window,
+            )
+
+            # Reprocess temporary parquet file and store in batches into final output files
+            reprocess_noop(
+                tmp_file,
+                output_feather_path=feather_path,
+                output_parquet_path=parquet_path,
+                output_root_path=root_path,
+                root_tree=root_tree,
+                batch_size=batch_size,
+            )
+    else:
+        # Process hits one by one and save into output files
+        sampiclyser.reorder_hits(
+            decoded_file,
+            output_feather_path=feather_path,
+            output_parquet_path=parquet_path,
+            output_root_path=root_path,
+            root_tree=root_tree,
+            use_unix_time=use_unix,
+            batch_size=batch_size,
+            max_time_offset=reorder_window,
+        )
