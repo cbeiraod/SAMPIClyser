@@ -33,6 +33,7 @@ from .sampic_tools import plot_channel_hit_rate
 from .sampic_tools import plot_channel_hits
 from .sampic_tools import plot_channel_waveforms
 from .sampic_tools import plot_hit_rate
+from .sampic_tools import reorder_hits
 from .sampic_tools import set_mplhep_style
 from .sensor_hitmaps import plot_hitmap
 
@@ -47,4 +48,5 @@ __all__ = [
     "plot_channel_waveforms",
     "check_time_ordering",
     "get_file_metadata",
+    "reorder_hits",
 ]
