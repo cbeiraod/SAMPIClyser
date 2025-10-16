@@ -4,6 +4,8 @@ Changelog
 Current (2025-10-16)
 --------------------
 
+* Added a new experimental option for processing a record batch into root without going through a pandas data frame
+
 
 0.1.2 (2025-10-16)
 ------------------
