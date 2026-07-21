@@ -363,7 +363,7 @@ class SampicHeader:
     sampic_mezzanine_board_version : str
         Version identifier of the mezzanine board.
     num_channels : int
-        Total number of channels in this run.
+        Total number of channels in the system for this run.
     ctrl_fpga_firmware_version : str
         Version of the control FPGA firmware.
     front_end_fpga_firmware_version : list of str
@@ -380,6 +380,10 @@ class SampicHeader:
         Whether waveform data were omitted.
     tdc_like_files : bool
         Whether files are in TDC-like format.
+    compact_binary_data: bool
+        Whether the files are in the new compact binary format. Default: False
+    data_in_file_type: int
+        Which binary format to use, if the data is in compact binary format. Default: 0
     hit_number_format : str
         Format string for hit numbering.
     unix_time_format : str
@@ -387,7 +391,7 @@ class SampicHeader:
     data_format : str
         Format string for data values.
     trigger_position_format : str
-        Format string for trigger-position values.
+        Format string for trigger-position values. Optional.
     data_samples_format : str
         Format string for the data-sample values.
     inl_correction : bool
@@ -410,10 +414,12 @@ class SampicHeader:
     reduced_data_type: bool = False
     without_waveform: bool = False
     tdc_like_files: bool = True
+    compact_binary_data: bool = False
+    data_in_file_type: int = 0
     hit_number_format: str = ""
     unix_time_format: str = ""
     data_format: str = ""
-    trigger_position_format: str = ""
+    trigger_position_format: str | None = field(default=None, compare=False)
     data_samples_format: str = ""
     inl_correction: bool = False
     adc_correction: bool = False
@@ -659,13 +665,21 @@ class SAMPIC_Run_Decoder:
                 else:
                     val = True
             elif "TDC-LIKE FILES" == key:
-                if val == "NO":
-                    val = False
-                else:
+                if val == "YES":
                     val = True
-            elif "INL Correction" == key[-14:]:
-                SAMPIC_Run_Decoder._parse_header_field(key[:-19].strip(), header, keep_unparsed=keep_unparsed)
-                key = "INL Correction"
+                else:
+                    val = False
+            elif "COMPACT BINARY DATA" == key:
+                if val == "YES":
+                    val = True
+                else:
+                    val = False
+            elif "DATA_IN_FILE_TYPE" == key:
+                val = int(val, 10)
+            elif "INL Correction" in key:
+                index = key.find("INL Correction")
+                SAMPIC_Run_Decoder._parse_header_field(key[: index - 5].strip(), header, keep_unparsed=keep_unparsed)
+                key = key[33:]
                 if val == "ON":
                     val = True
                 else:
