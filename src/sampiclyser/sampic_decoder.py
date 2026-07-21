@@ -840,66 +840,89 @@ class SAMPIC_Run_Decoder:
         buffer = bytearray()
         hits = 0
 
-        # TODO: Adjust the field_specs according to the header
+        def generate_field_specs():
+            # Pre-Compile Struct Formats
+            # See https://docs.python.org/3/library/struct.html
+            s_u8 = Struct('B')
+            s_i16 = Struct('<h')
+            s_ui16 = Struct('<H')
+            s_i32 = Struct('<i')
+            # s_i64 = Struct('<q')
+            s_ui64 = Struct('<Q')
+            s_f32 = Struct('<f')
+            s_f64 = Struct('<d')
 
-        # Pre-Compile Struct Formats
-        # See https://docs.python.org/3/library/struct.html
-        s_i32 = Struct('<i')
-        # s_i64 = Struct('<q')
-        s_ui64 = Struct('<Q')
-        s_f32 = Struct('<f')
-        s_f64 = Struct('<d')
+            def get_field_parser(field_format: str):
+                if field_format == "uchar":
+                    return 1, lambda v, o: s_u8.unpack_from(v, o)[0], "S"
+                elif field_format == "signed short":
+                    return 2, lambda v, o: s_i16.unpack_from(v, o)[0], "S"
+                elif field_format == "ushort":
+                    return 2, lambda v, o: s_ui16.unpack_from(v, o)[0], "S"
+                elif field_format == "int":
+                    return 4, lambda v, o: s_i32.unpack_from(v, o)[0], "S"
+                elif field_format == "u_int64":
+                    return 8, lambda v, o: s_ui64.unpack_from(v, o)[0], "S"
+                elif field_format == "float":
+                    return 4, lambda v, o: s_f32.unpack_from(v, o)[0], "S"
+                elif field_format == "double":
+                    return 8, lambda v, o: s_f64.unpack_from(v, o)[0], "S"
+                elif " " in field_format:
+                    if field_format[:8] == "array of":
+                        field_bytes, field_parser, _ = get_field_parser(field_format[9:])
+                        return field_bytes, field_parser, "A[DataSize]"
+                    elif field_format[0] == "(":
+                        index = field_format.find(')')
+                        return get_field_parser(field_format[index + 1 :].strip())
+                    elif field_format.split(" ")[0] == "in":
+                        field_bytes, field_parser, _ = get_field_parser(self.run_header.data_samples_format)
+                        return field_bytes, field_parser, "S"
+                    else:
+                        try:
+                            return get_field_parser(field_format.split(" ")[0])
+                        except RuntimeError:
+                            raise RuntimeError(f"Unknown field format: {field_format}")
+                else:
+                    raise RuntimeError(f"Unknown field format: {field_format}")
 
-        field_specs = [
-            # ("HIT number", 4, lambda b: int.from_bytes(b, "little", signed=True), "S"),
-            # ("Unix time", 8, lambda b: struct.unpack('d', b)[0], "S"),
-            # ("Channel", 4, lambda b: int.from_bytes(b, "little", signed=True), "S"),
-            # ("Cell", 4, lambda b: int.from_bytes(b, "little", signed=True), "S"),
-            # ("TimeStampA", 4, lambda b: int.from_bytes(b, "little", signed=True), "S"),
-            # ("TimeStampB", 4, lambda b: int.from_bytes(b, "little", signed=True), "S"),
-            # ("FPGATimeStamp", 8, lambda b: int.from_bytes(b, "little", signed=False), "S"),
-            # ("StartOfADCRamp", 4, lambda b: int.from_bytes(b, "little", signed=True), "S"),
-            # ("RawTOTValue", 4, lambda b: int.from_bytes(b, "little", signed=True), "S"),
-            # ("TOTValue", 4, lambda b: struct.unpack('f', b)[0], "S"),
-            # ("PhysicalCell0Time", 8, lambda b: struct.unpack('d', b)[0], "S"),
-            # ("OrderedCell0Time", 8, lambda b: struct.unpack('d', b)[0], "S"),
-            # ("Time", 8, lambda b: struct.unpack('d', b)[0], "S"),
-            # ("Baseline", 4, lambda b: struct.unpack('f', b)[0], "S"),
-            # ("RawPeak", 4, lambda b: struct.unpack('f', b)[0], "S"),
-            # ("Amplitude", 4, lambda b: struct.unpack('f', b)[0], "S"),
-            # ("ADCCounterLatched", 4, lambda b: int.from_bytes(b, "little", signed=True), "S"),
-            # ("DataSize", 4, lambda b: int.from_bytes(b, "little", signed=True), "S"),
-            # ("TriggerPosition", 4, lambda b: int.from_bytes(b, "little", signed=True), "A[DataSize]"),
-            # ("DataSample", 4, lambda b: struct.unpack('f', b)[0], "A[DataSize]"),
-            # ("field1", 4, lambda b: int.from_bytes(b, "little", signed=True), "S"),
-            # ("field2", 8, lambda b: struct.unpack("<d", b)[0], "S"),
-            # ("flag",   1, lambda b: bool(b[0]), "S"),
-            # …etc…
-            ("HITNumber", 4, lambda v, o: s_i32.unpack_from(v, o)[0], "S"),
-            # ("UnixTime", 8, lambda v, o: datetime.fromtimestamp(s_f64.unpack_from(v, o)[0]), "S"),
-            ("UnixTime", 8, lambda v, o: s_f64.unpack_from(v, o)[0], "S"),
-            ("Channel", 4, lambda v, o: s_i32.unpack_from(v, o)[0], "S"),
-            ("Cell", 4, lambda v, o: s_i32.unpack_from(v, o)[0], "S"),
-            ("TimeStampA", 4, lambda v, o: s_i32.unpack_from(v, o)[0], "S"),
-            ("TimeStampB", 4, lambda v, o: s_i32.unpack_from(v, o)[0], "S"),
-            ("FPGATimeStamp", 8, lambda v, o: s_ui64.unpack_from(v, o)[0], "S"),
-            ("StartOfADCRamp", 4, lambda v, o: s_i32.unpack_from(v, o)[0], "S"),
-            ("RawTOTValue", 4, lambda v, o: s_i32.unpack_from(v, o)[0], "S"),
-            ("TOTValue", 4, lambda v, o: s_f32.unpack_from(v, o)[0], "S"),
-            ("PhysicalCell0Time", 8, lambda v, o: s_f64.unpack_from(v, o)[0], "S"),
-            ("OrderedCell0Time", 8, lambda v, o: s_f64.unpack_from(v, o)[0], "S"),
-            ("Time", 8, lambda v, o: s_f64.unpack_from(v, o)[0], "S"),
-            ("Baseline", 4, lambda v, o: s_f32.unpack_from(v, o)[0], "S"),
-            ("RawPeak", 4, lambda v, o: s_f32.unpack_from(v, o)[0], "S"),
-            ("Amplitude", 4, lambda v, o: s_f32.unpack_from(v, o)[0], "S"),
-            ("ADCCounterLatched", 4, lambda v, o: s_i32.unpack_from(v, o)[0], "S"),
-            ("DataSize", 4, lambda v, o: s_i32.unpack_from(v, o)[0], "S"),
-            ("TriggerPosition", 4, lambda v, o: s_i32.unpack_from(v, o)[0], "A[DataSize]"),
-            ("DataSample", 4, lambda v, o: s_f32.unpack_from(v, o)[0], "A[DataSize]"),
-        ]
+            field_specs = []
+
+            def append_field(field_name: str, field_format: str):
+                print(f"Field: {field_name}; Format: {field_format}")
+                field_bytes, field_parser, field_type = get_field_parser(field_format)
+                field_specs.append((field_name, field_bytes, field_parser, field_type))
+
+            # Fixed information in header (so far guaranteed to always exist)
+            # Hit Number is first field
+            append_field("HitNumber", self.run_header.hit_number_format)
+
+            # Unix timestamp is next
+            append_field("UnixTime", self.run_header.unix_time_format)
+
+            # Variable information (extracted from header format for the hits)
+            print(f"Data format: {self.run_header.data_format}")
+            pattern = r'\(?\s*([^\s()]+)\s*\(((?:[^()]+|\([^)]*\))*)\)'
+            for match in re.finditer(pattern, self.run_header.data_format):
+                field_name = match.group(1)
+                field_format = match.group(2)
+
+                append_field(field_name, field_format)
+
+            # Array information of the hits
+            if self.run_header.trigger_position_format is not None:
+                append_field("TriggerPosition", self.run_header.trigger_position_format)
+
+            print(f"DataSample Format: {self.run_header.data_samples_format}")
+            append_field("DataSample", self.run_header.data_samples_format)
+
+            print("Field Specs:")
+            for val in field_specs:
+                print(f"  - {val}")
+
+            return field_specs
 
         # Helper to try parsing one record from the buffer
-        def try_parse_record() -> Dict[str, Any] | None:
+        def try_parse_record(field_specs) -> Dict[str, Any] | None:
             view = memoryview(buffer)
 
             # First ensure we have at least the fixed portion
@@ -988,6 +1011,7 @@ class SAMPIC_Run_Decoder:
                 else:
                     first_header = header
                     self.run_header = header
+                    field_specs = generate_field_specs()
 
                 # Stream through chunks
                 for chunk in body_gen:
@@ -998,7 +1022,7 @@ class SAMPIC_Run_Decoder:
                         if limit_hits > 0 and hits >= limit_hits:
                             return_now = True
                             break
-                        rec = try_parse_record()
+                        rec = try_parse_record(field_specs)
                         if rec is None:
                             break
                         hits += 1
