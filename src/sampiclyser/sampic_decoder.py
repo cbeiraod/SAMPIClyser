@@ -600,7 +600,7 @@ class SAMPIC_Run_Decoder:
             sub_fields = [f.strip() for f in field.split("==") if f.strip()]
             for sub_field in sub_fields:
                 SAMPIC_Run_Decoder._parse_header_field(sub_field, header, keep_unparsed=keep_unparsed)
-        elif "  " in field:
+        elif "  " in field and field[:4] != "Ch (":
             key = None
             sub_fields = [f.strip() for f in field.split("  ") if f.strip()]
             for sub_field in sub_fields:
@@ -679,7 +679,7 @@ class SAMPIC_Run_Decoder:
             elif "INL Correction" in key:
                 index = key.find("INL Correction")
                 SAMPIC_Run_Decoder._parse_header_field(key[: index - 5].strip(), header, keep_unparsed=keep_unparsed)
-                key = key[33:]
+                key = key[index:]
                 if val == "ON":
                     val = True
                 else:
@@ -695,11 +695,12 @@ class SAMPIC_Run_Decoder:
         elif field[:4] == "Ch (":
             setattr(header, "data_format", field)
             key = None
-        elif field[-1] == ']':
+        elif field[-1] == ']' or field[:11] == "DataSamples":
             index = field.find('[')
+            final_index = field.find(']')
 
             key = field[:index]
-            val = field[index + 1 : -1]
+            val = field[index + 1 : final_index]
 
             if "DataSamples" == key:
                 key_l = "data_samples_format"
