@@ -892,28 +892,125 @@ class SAMPIC_Run_Decoder:
                 field_bytes, field_parser, field_type = get_field_parser(field_format)
                 field_specs.append((field_name, field_bytes, field_parser, field_type))
 
-            # Fixed information in header (so far guaranteed to always exist)
-            # Hit Number is first field
-            append_field("HitNumber", self.run_header.hit_number_format)
+            if not self.run_header.compact_binary_data:
+                # Fixed information in header (so far guaranteed to always exist)
+                # Hit Number is first field
+                append_field("HitNumber", self.run_header.hit_number_format)
 
-            # Unix timestamp is next
-            append_field("UnixTime", self.run_header.unix_time_format)
+                # Unix timestamp is next
+                append_field("UnixTime", self.run_header.unix_time_format)
 
-            # Variable information (extracted from header format for the hits)
-            print(f"Data format: {self.run_header.data_format}")
-            pattern = r'\(?\s*([^\s()]+)\s*\(((?:[^()]+|\([^)]*\))*)\)'
-            for match in re.finditer(pattern, self.run_header.data_format):
-                field_name = match.group(1)
-                field_format = match.group(2)
+                # Variable information (extracted from header format for the hits)
+                pattern = r'\(?\s*([^\s()]+)\s*\(((?:[^()]+|\([^)]*\))*)\)'
+                for match in re.finditer(pattern, self.run_header.data_format):
+                    field_name = match.group(1)
+                    field_format = match.group(2)
 
-                append_field(field_name, field_format)
+                    append_field(field_name, field_format)
 
-            # Array information of the hits
-            if self.run_header.trigger_position_format is not None:
-                append_field("TriggerPosition", self.run_header.trigger_position_format)
+                # Array information of the hits
+                if self.run_header.trigger_position_format is not None:
+                    append_field("TriggerPosition", self.run_header.trigger_position_format)
 
-            print(f"DataSample Format: {self.run_header.data_samples_format}")
-            append_field("DataSample", self.run_header.data_samples_format)
+                append_field("DataSample", self.run_header.data_samples_format)
+            elif self.run_header.data_in_file_type == 0:
+                # Structure from SAMPIC data format from 18/04/2023
+
+                # Hit Number is first field
+                append_field("HitNumber", "int")
+
+                # Channel
+                append_field("Channel", "uchar")
+
+                # TimeStamp
+                append_field("TimeStamp", "double")
+
+                # RawTOTValue
+                append_field("RawTOTValue", "ushort")
+
+                # TOTValue
+                append_field("TOTValue", "float")
+
+                # FirstCellIndex
+                append_field("FirstCellIndex", "uchar")
+
+                # DataSize
+                append_field("DataSize", "uchar")
+
+                # DataSamples
+                append_field("DataSample", "array of signed short")
+            elif self.run_header.data_in_file_type == 1:
+                # Structure from SAMPIC data format from 18/04/2023
+
+                # Hit Number is first field
+                append_field("HitNumber", "int")
+
+                # Channel
+                append_field("Channel", "uchar")
+
+                # TimeStamp
+                append_field("TimeStamp", "double")
+
+                # RawTOTValue
+                append_field("RawTOTValue", "ushort")
+
+                # TOTValue
+                append_field("TOTValue", "float")
+
+                # Time
+                append_field("Time", "float")
+
+                # Baseline
+                append_field("Baseline", "float")
+
+                # Amplitude
+                append_field("Amplitude", "float")
+
+                # FirstCellIndex
+                append_field("FirstCellIndex", "uchar")
+
+                # DataSize
+                append_field("DataSize", "uchar")
+
+                # DataSamples
+                append_field("DataSample", "array of signed short")
+            elif self.run_header.data_in_file_type == 2:
+                # Structure from SAMPIC data format from 18/04/2023
+
+                # Channel
+                append_field("Channel", "uchar")
+
+                # TimeStamp
+                append_field("TimeStamp", "double")
+
+                # RawTOTValue
+                append_field("RawTOTValue", "ushort")
+
+                # TOTValue
+                append_field("TOTValue", "float")
+
+                # Time
+                append_field("Time", "double")
+
+                # Baseline
+                append_field("Baseline", "float")
+
+                # Amplitude
+                append_field("Amplitude", "float")
+            elif self.run_header.data_in_file_type == 3:
+                # Structure from SAMPIC data format from 18/04/2023
+
+                # Channel
+                append_field("Channel", "uchar")
+
+                # Time
+                append_field("Time", "double")
+
+                # TOTValue
+                append_field("TOTValue", "float")
+
+                # RawTOTValue
+                append_field("RawTOTValue", "ushort")
 
             print("Field Specs:")
             for val in field_specs:
