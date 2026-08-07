@@ -794,6 +794,7 @@ class SAMPIC_Run_Decoder:
         limit_hits: int = 0,
         extra_header_bytes: int = 1,
         chunk_size: int = 64 * 1024,
+        debug=False,
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Stream and decode hit records from all files in the run.
@@ -888,7 +889,8 @@ class SAMPIC_Run_Decoder:
             field_specs = []
 
             def append_field(field_name: str, field_format: str):
-                print(f"Field: {field_name}; Format: {field_format}")
+                if debug:
+                    print(f"Field: {field_name}; Format: {field_format}")
                 field_bytes, field_parser, field_type = get_field_parser(field_format)
                 field_specs.append((field_name, field_bytes, field_parser, field_type))
 
@@ -1012,9 +1014,10 @@ class SAMPIC_Run_Decoder:
                 # RawTOTValue
                 append_field("RawTOTValue", "ushort")
 
-            print("Field Specs:")
-            for val in field_specs:
-                print(f"  - {val}")
+            if debug:
+                print("Field Specs:")
+                for val in field_specs:
+                    print(f"  - {val}")
 
             return field_specs
 
@@ -1297,6 +1300,7 @@ class SAMPIC_Run_Decoder:
         extra_header_bytes: int = 1,
         chunk_size: int = 64 * 1024,
         batch_size: int = 100_000,
+        debug: bool = False,
     ) -> None:
         """
         Decode hit records from SAMPIC run files and export to Feather, Parquet, and/or ROOT.
@@ -1356,7 +1360,9 @@ class SAMPIC_Run_Decoder:
         feather_writer = None
         root_tree_obj = None
 
-        for hit_record in self.parse_hit_records(limit_hits=limit_hits, extra_header_bytes=extra_header_bytes, chunk_size=chunk_size):
+        for hit_record in self.parse_hit_records(
+            limit_hits=limit_hits, extra_header_bytes=extra_header_bytes, chunk_size=chunk_size, debug=debug
+        ):
             buffer.append(hit_record)
             if len(buffer) < batch_size:
                 continue
