@@ -356,6 +356,8 @@ class SampicHeader:
 
     Attributes
     ----------
+    sampiclyser_version : str
+        Version of the sampiclyser used to process the data.
     software_version : str
         Version of the SAMPIC DAQ software.
     timestamp : datetime.datetime
@@ -402,6 +404,9 @@ class SampicHeader:
         Any unrecognized header fields (key/value both decoded as ASCII).
     """
 
+    from sampiclyser import __version__
+
+    sampiclyser_version: str = __version__
     software_version: str = ""
     timestamp: datetime | None = field(default=None, compare=False)
     sampic_mezzanine_board_version: str = ""
@@ -1168,6 +1173,7 @@ class SAMPIC_Run_Decoder:
         programmatic reloading via `decode_byte_metadata`.
         """
         retVal: Dict[bytes, bytes] = {
+            b'sampiclyser_version': self.run_header.sampiclyser_version.encode('ascii'),
             b'software_version': self.run_header.software_version.encode('ascii'),
             b'timestamp': struct.pack('<d', self.run_header.timestamp.timestamp()),
             b'sampic_mezzanine_board_version': self.run_header.sampic_mezzanine_board_version.encode('ascii'),
@@ -1227,6 +1233,7 @@ class SAMPIC_Run_Decoder:
         for conversion to Awkward or NumPy arrays when writing via uproot.
         """
         retVal: Dict[str, object] = {
+            'sampiclyser_version': self.run_header.sampiclyser_version,
             'software_version': self.run_header.software_version,
             'timestamp': self.run_header.timestamp,
             'sampic_mezzanine_board_version': self.run_header.sampic_mezzanine_board_version,
