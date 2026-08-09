@@ -374,6 +374,7 @@ def decode_byte_metadata(byte_metadata: dict[bytes, bytes]) -> dict[str, object]
 
         # Text fields
         if key in [
+            'sampiclyser_version',
             'software_version',
             'sampic_mezzanine_board_version',
             'ctrl_fpga_firmware_version',

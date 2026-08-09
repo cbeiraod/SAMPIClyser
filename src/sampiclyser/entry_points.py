@@ -99,10 +99,7 @@ def sampiclyser_version(
 
     if 'sampiclyser_version' in metadata:
         click.echo('\tThe SAMPIClyser version used to process this file was: ', nl=False)
-        if type(metadata['sampiclyser_version']) is bytes:
-            click.secho('v' + metadata['sampiclyser_version'].decode('ascii'), fg='blue')
-        else:
-            click.secho('v' + metadata['sampiclyser_version'], fg='blue')
+        click.secho('v' + metadata['sampiclyser_version'], fg='blue')
     else:
         click.echo('\tThe SAMPIClyser version used to process this file predates v0.1.3 so it can not be determined')
 
