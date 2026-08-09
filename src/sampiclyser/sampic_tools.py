@@ -81,11 +81,14 @@ class TimestampedRecord:
     ----------
     timestamp : float
         The hit timestamp (seconds since epoch or reconstructed).
+    channel : int
+        The channel where the hit was recorded
     record : Any
         The full hit data (e.g., dict of field values).  Not used for ordering.
     """
 
     timestamp: float
+    channel: int
     record: Any = field(compare=False)
 
 
@@ -2681,7 +2684,7 @@ def reorder_hits(
                 ts, rec = extractor(batch, i)
                 if current_max_time is None or ts > current_max_time:
                     current_max_time = ts
-                heapq.heappush(heap, TimestampedRecord(ts, rec))
+                heapq.heappush(heap, TimestampedRecord(ts, rec["Channel"], rec))
 
                 # Emit due records
                 if max_time_offset is not None and current_max_time is not None:
