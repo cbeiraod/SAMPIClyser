@@ -1219,11 +1219,14 @@ class SAMPIC_Run_Decoder:
             b'hit_number_format': self.run_header.hit_number_format.encode('ascii'),
             b'unix_time_format': self.run_header.unix_time_format.encode('ascii'),
             b'data_format': self.run_header.data_format.encode('ascii'),
-            b'trigger_position_format': self.run_header.trigger_position_format.encode('ascii'),
+            # b'trigger_position_format': self.run_header.trigger_position_format.encode('ascii'),
             b'data_samples_format': self.run_header.data_samples_format.encode('ascii'),
             b'inl_correction': b'\x01' if self.run_header.inl_correction else b'\x00',
             b'adc_correction': b'\x01' if self.run_header.adc_correction else b'\x00',
         }
+
+        if self.run_header.trigger_position_format is not None:
+            retVal[b'trigger_position_format'] = self.run_header.trigger_position_format.encode('ascii')
 
         return retVal
 
@@ -1279,11 +1282,14 @@ class SAMPIC_Run_Decoder:
             'hit_number_format': self.run_header.hit_number_format,
             'unix_time_format': self.run_header.unix_time_format,
             'data_format': self.run_header.data_format,
-            'trigger_position_format': self.run_header.trigger_position_format,
+            # 'trigger_position_format': self.run_header.trigger_position_format,
             'data_samples_format': self.run_header.data_samples_format,
             'inl_correction': self.run_header.inl_correction,
             'adc_correction': self.run_header.adc_correction,
         }
+
+        if self.run_header.trigger_position_format is not None:
+            retVal['trigger_position_format'] = self.run_header.trigger_position_format
 
         return retVal
 
