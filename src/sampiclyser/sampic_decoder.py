@@ -941,7 +941,7 @@ class SAMPIC_Run_Decoder:
                 append_field("Channel", "uchar")
 
                 # TimeStamp
-                append_field("TimeStamp", "double")
+                append_field("FirstSampleTimeStamp", "double")
 
                 # RawTOTValue
                 append_field("RawTOTValue", "ushort")
@@ -967,7 +967,7 @@ class SAMPIC_Run_Decoder:
                 append_field("Channel", "uchar")
 
                 # TimeStamp
-                append_field("TimeStamp", "double")
+                append_field("FirstSampleTimeStamp", "double")
 
                 # RawTOTValue
                 append_field("RawTOTValue", "ushort")
@@ -999,7 +999,7 @@ class SAMPIC_Run_Decoder:
                 append_field("Channel", "uchar")
 
                 # TimeStamp
-                append_field("TimeStamp", "double")
+                append_field("FirstSampleTimeStamp", "double")
 
                 # RawTOTValue
                 append_field("RawTOTValue", "ushort")
