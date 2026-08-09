@@ -1047,7 +1047,26 @@ class SAMPIC_Run_Decoder:
                 return None  # need more data
 
             # Parse fixed fields to extract the fixed portion, counts should be in this portion so we can parse the rest of the data structure
-            record: Dict[str, Any] = {}
+            record: Dict[str, Any] = {
+                # Coordination
+                "HitNumber": None,
+                # From SAMPIC
+                "Channel": None,  # Always present
+                "FirstSampleTime": None,
+                "RawTOTValue": None,  # Always present
+                "TOTValue": None,  # Always present
+                # From SAMPIC: Samples / Waveform
+                "DataSize": None,
+                "DataSample": None,
+                # Measurements
+                "Time": None,
+                "Baseline": None,
+                "RawPeak": None,
+                "Amplitude": None,
+                # Other
+                "FirstCellIndex": None,
+                "NumTriggerSamples": None,
+            }
             offset = 0
             for name, nbytes, conv, field_type in field_specs:
                 if field_type != "S":
