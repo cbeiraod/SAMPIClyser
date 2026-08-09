@@ -51,26 +51,34 @@ from termcolor import colored
 SAMPIC_Schema_Info = {
     # Format:
     # Name: (pandas, pyarrow, numpy for root, optional array size)
-    "HITNumber": ("int32", pa.int32(), np.int32),
-    "UnixTime": ("float64", pa.float64(), np.double),
-    "Channel": ("int32", pa.int32(), np.int32),
-    "Cell": ("int32", pa.int32(), np.int32),
-    "TimeStampA": ("int32", pa.int32(), np.int32),
-    "TimeStampB": ("int32", pa.int32(), np.int32),
-    "FPGATimeStamp": ("uint64", pa.uint64(), np.double),
-    "StartOfADCRamp": ("int32", pa.int32(), np.int32),
+    # Coordination
+    "HitNumber": ("int32", pa.int32(), np.int32),
+    # From SAMPIC
+    "Channel": ("uint8", pa.uint8(), np.uint8),
+    "FirstSampleTime": ("float64", pa.float64(), np.double),
     "RawTOTValue": ("int32", pa.int32(), np.int32),
     "TOTValue": ("int32", pa.int32(), np.int32),
-    "PhysicalCell0Time": ("float64", pa.float64(), np.double),
-    "OrderedCell0Time": ("float64", pa.float64(), np.double),
-    "Time": ("float64", pa.float64(), np.double),
+    # From SAMPIC: Samples / Waveform
+    "DataSize": ("int32", pa.int32(), np.int32),
+    "DataSample": (None, pa.list_(pa.float32()), np.float32, 64),  # This has Time-INL applied to correct sampling
+    # Measurements
+    "Time": ("float64", pa.float64(), np.double),  # From Ordered+CFD (CFD extracted from the waveform)
     "Baseline": ("float32", pa.float32(), np.float32),
     "RawPeak": ("float32", pa.float32(), np.float32),
     "Amplitude": ("float32", pa.float32(), np.float32),
+    # Other
+    "FirstCellIndex": ("uint8", pa.uint8(), np.uint8),
+    "NumTriggerSamples": ("uint8", pa.uint8(), np.uint8),
+    "UnixTime": ("float64", pa.float64(), np.double),  # when received in computer
+    # "Cell": ("int32", pa.int32(), np.int32), # Physical cell of first sample
+    "TimeStampA": ("int32", pa.int32(), np.int32),
+    "TimeStampB": ("int32", pa.int32(), np.int32),
+    "FPGATimeStamp": ("uint64", pa.uint64(), np.uint64),
+    "StartOfADCRamp": ("int32", pa.int32(), np.int32),
+    "PhysicalCell0Time": ("float64", pa.float64(), np.double),
+    # "OrderedCell0Time": ("float64", pa.float64(), np.double), # timestamp of first sample in ns from run start
     "ADCCounterLatched": ("int32", pa.int32(), np.int32),
-    "DataSize": ("int32", pa.int32(), np.int32),
-    "TriggerPosition": (None, pa.list_(pa.int32()), np.int32, 64),
-    "DataSample": (None, pa.list_(pa.float32()), np.float32, 64),
+    # "TriggerPosition": (None, pa.list_(pa.int32()), np.int32, 64), # last samples may be affected by disconnecting, so need to be corrected
     # … etc …
 }
 
