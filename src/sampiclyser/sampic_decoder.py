@@ -1130,6 +1130,39 @@ class SAMPIC_Run_Decoder:
                         record[name] = conv(view, offset)
                 offset += nbytes * multiplier
 
+            # Normalize data here
+            if "Ch" in record:
+                record['Channel'] = record.pop("Ch")
+
+            if "OrderedCell0Time" in record:
+                record["FirstSampleTime"] = record.pop("OrderedCell0Time")
+            elif "Cell0Time" in record:
+                record["FirstSampleTime"] = record.pop("Cell0Time")
+            elif self.run_header.compact_binary_data and "FirstSampleTimeStamp" in record:
+                record["FirstSampleTime"] = record.pop("FirstSampleTimeStamp")
+
+            if not self.run_header.compact_binary_data and "CellInfo" in record:
+                record["FirstCellIndex"] = 64 - record.pop("CellInfo")
+
+            if not self.run_header.compact_binary_data and "TriggerPosition" in record:
+                triggers: List = record.pop("TriggerPosition")
+                record["NumTriggerSamples"] = triggers.count(1)
+
+            # Add here to reorder the samples if needed
+            # if not self.run_header.compact_binary_data:
+            #    pass
+            # else:
+            #    pass
+
+            if self.run_header.compact_binary_data and self.run_header.adc_correction:
+                record["DataSample"] = [sample / 10000.0 for sample in record["DataSample"]]
+
+            # Remove empty stuff
+            keys = list(record.keys())
+            for key in keys:
+                if record[key] is None:
+                    record.pop(key)
+
             # consume bytes from buffer
             del view
             del buffer[:total_len]
