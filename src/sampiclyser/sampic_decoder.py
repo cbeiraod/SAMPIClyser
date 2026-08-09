@@ -84,6 +84,7 @@ SAMPIC_Schema_Info = {
 
 
 def build_schema(
+    df: pd.DataFrame,
     metadata: Optional[Dict[bytes, bytes]] = None,
     schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info,
 ) -> pa.Schema:
@@ -120,7 +121,7 @@ def build_schema(
     """
     # Build list of fields with valid PyArrow types
     try:
-        fields = [pa.field(name, schemaInfo[name][1]) for name in schemaInfo if schemaInfo[name][1] is not None]
+        fields = [pa.field(name, schemaInfo[name][1]) for name in schemaInfo if schemaInfo[name][1] is not None and name in df.columns]
     except KeyError as e:
         raise KeyError(f"Field '{e.args[0]}' missing PyArrow type in schemaInfo")
 
@@ -196,6 +197,8 @@ def get_root_data_with_schema(df: pd.DataFrame, schemaInfo: Dict[str, Tuple] = S
     """
     ret_val: Dict[str, np.ndarray] = {}
     for col, info in schemaInfo.items():
+        if col not in df.columns:
+            continue
         numpy_dtype = None
         if len(info) > 2:
             numpy_dtype = info[2]
@@ -1367,8 +1370,7 @@ class SAMPIC_Run_Decoder:
         first = True
 
         # Schema related objects
-        # TODO: Change this to use info from the header
-        schema = build_schema()
+        schema = None
 
         # Writers placeholders
         parquet_writer = None
@@ -1385,6 +1387,7 @@ class SAMPIC_Run_Decoder:
             df_batch = pd.DataFrame(buffer)
             convert_df_with_schema(df_batch)
             if first:
+                schema = build_schema(df_batch)
                 schema = schema.with_metadata(self.prepare_header_metadata())
             table = pa.Table.from_pandas(df_batch, schema=schema, preserve_index=False)
             df_batch.reset_index(drop=True, inplace=True)
@@ -1419,6 +1422,7 @@ class SAMPIC_Run_Decoder:
             df_batch = pd.DataFrame(buffer)
             convert_df_with_schema(df_batch)
             if first:
+                schema = build_schema(df_batch)
                 schema = schema.with_metadata(self.prepare_header_metadata())
             table = pa.Table.from_pandas(df_batch, schema=schema, preserve_index=False)
             df_batch.reset_index(drop=True, inplace=True)
