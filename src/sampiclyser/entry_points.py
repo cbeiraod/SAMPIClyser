@@ -55,6 +55,59 @@ def version():
 
 
 @cli.command()
+@click.option(
+    '--input-dir',
+    '-i',
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    required=True,
+    help='Directory containing SAMPIC binary run files',
+)
+@click.option('--debug', '-d', is_flag=True, help='Enable debug logging')
+def sampic_version(
+    input_dir: Path,
+    debug: bool,
+):
+    """Print the SAMPIC WAVEFORM-TDC Software version used to acquire a specific run file"""
+    decoder = sampiclyser.SAMPIC_Run_Decoder(input_dir)
+
+    for file in decoder.run_files:
+        with decoder.open_sampic_file_in_chunks_and_get_header(file, 1, debug=debug) as (
+            header_bytes,
+            _,
+        ):
+            click.secho(file, fg='green')
+            click.echo('\tHeader: ', nl=False)
+            click.secho(len(header_bytes), nl=False, fg='blue')
+            click.echo(' bytes')
+
+            header = decoder.decode_sampic_header(header_bytes)
+            click.echo('\tThe SAMPIC WAVEFORM-TDC Software version is: ', nl=False)
+            click.secho(header.software_version, fg='blue')
+        break
+
+
+@cli.command()
+@click.argument('decoded_file', type=click.Path(exists=True, path_type=Path))
+def sampiclyser_version(
+    decoded_file: Path,
+):
+    """Print the SAMPIClyser version used to convert the decoded file"""
+
+    metadata = sampiclyser.get_file_metadata(decoded_file)
+
+    click.secho(decoded_file, fg='green')
+
+    if 'sampiclyser_version' in metadata:
+        click.echo('\tThe SAMPIClyser version used to process this file was: ', nl=False)
+        if type(metadata['sampiclyser_version']) is bytes:
+            click.secho('v' + metadata['sampiclyser_version'].decode('ascii'), fg='blue')
+        else:
+            click.secho('v' + metadata['sampiclyser_version'], fg='blue')
+    else:
+        click.echo('\tThe SAMPIClyser version used to process this file predates v0.1.3 so it can not be determined')
+
+
+@cli.command()
 @click.argument('decoded_file', type=click.Path(exists=True, path_type=Path))
 @click.option(
     '--root-tree',
