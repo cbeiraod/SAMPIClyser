@@ -154,7 +154,7 @@ def decode(  # noqa: max-complexity=20
             "The following binary files were found in the input and will be processed in this order. Also reporting the size of the headers for each:"
         )
         for file in decoder.run_files:
-            with decoder.open_sampic_file_in_chunks_and_get_header(file, extra_header_bytes, chunk_size=chunk_size, debug=False) as (
+            with decoder.open_sampic_file_in_chunks_and_get_header(file, extra_header_bytes, chunk_size=chunk_size, debug=True) as (
                 header,
                 _,
             ):
@@ -166,7 +166,7 @@ def decode(  # noqa: max-complexity=20
     if debug:
         click.echo()
         click.echo("Processing and printing up to 4 hits to the terminal.")
-        for raw_hit in decoder.parse_hit_records(limit_hits=4, extra_header_bytes=extra_header_bytes, chunk_size=chunk_size):
+        for raw_hit in decoder.parse_hit_records(limit_hits=4, extra_header_bytes=extra_header_bytes, chunk_size=chunk_size, debug=True):
             click.echo(raw_hit)
 
     if feather_path is None and parquet_path is None and root_path is None:
@@ -181,6 +181,7 @@ def decode(  # noqa: max-complexity=20
             extra_header_bytes=extra_header_bytes,
             chunk_size=chunk_size,
             batch_size=batch_size,
+            debug=debug,
         )
 
 
