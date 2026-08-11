@@ -391,11 +391,11 @@ def decode_byte_metadata(byte_metadata: dict[bytes, bytes]) -> dict[str, object]
             (ts,) = struct.unpack('<d', data_bytes)
             value = datetime.datetime.fromtimestamp(ts)
         # Unsigned int fields
-        elif key in ['num_channels', 'enabled_channels_mask']:
+        elif key in ['num_channels', 'enabled_channels_mask', 'data_in_file_type']:
             (tmp,) = struct.unpack('<I', data_bytes)
             value = tmp
         # Boolean flags: 0x00 => False, else True
-        elif key in ['reduced_data_type', 'without_waveform', 'tdc_like_files', 'inl_correction', 'adc_correction']:
+        elif key in ['reduced_data_type', 'without_waveform', 'tdc_like_files', 'compact_binary_data', 'inl_correction', 'adc_correction']:
             value = False if data_bytes == b'\x00' else True
 
         metadata[key] = value
