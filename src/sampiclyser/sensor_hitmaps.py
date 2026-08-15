@@ -578,7 +578,7 @@ def plot_hitmap(
     vmax = all_vals.max() if all_vals.size > 0 else 1
     norm = LogNorm(vmin=vmin, vmax=vmax) if log_z else Normalize(vmin=0, vmax=vmax)
 
-    with plt.style.use(sampiclyser_style):
+    with plt.style.context(sampiclyser_style):
         nrows, ncols = layout
         # Create figure and axes first, then apply title
         fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False, constrained_layout=True)
