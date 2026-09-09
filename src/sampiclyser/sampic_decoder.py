@@ -1255,7 +1255,7 @@ class SAMPIC_Run_Decoder:
                     if self.run_header.compact_binary_data and self.run_header.data_in_file_type < 3:
                         print(
                             colored("Warning:", "yellow"),
-                            "The RAW data file was taken in a compact mode and with hit time information (when each hit happened). In this mode the time counter appears to wrap at the 3.05 hour mark (40 bits at 100Mhz maybe?), any run longer than 3.05h will not be able to uniquely determine when a hit happened, the hit ordering helps but it is impossible to know with certainty if only 1 or more wraps happened between any 2 hits. Execution will proceed assuming the system was configured such that at least one channel had a few hits within the 3.05h period, thus each decrease in the timestamp is associated with one wrap of the counter (modulo the out of order events).",
+                            "The RAW data file was taken in a compact mode and with hit time information (when each hit happened). In this mode the time counter appears to wrap at the 3.05 hour mark (40 bits at 100Mhz maybe?), any run longer than 3.05h will not be able to uniquely determine when a hit happened, the hit ordering helps but it is impossible to know with certainty if only 1 or more wraps happened between any 2 hits. Execution will proceed assuming the system was configured such that at least one channel had a few hits within the 3.05h period, thus each decrease in the timestamp is associated with one wrap of the counter (modulo the out of order hits).",
                         )
                     if self.run_header.compact_binary_data and self.run_header.data_in_file_type == 3:
                         print(
