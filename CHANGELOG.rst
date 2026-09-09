@@ -10,6 +10,7 @@ Current (2026-09-09)
 * Added a new experimental option for processing a record batch into root without going through a pandas data frame
 * Added the new hit time unwrap logic
 * Added a guard to not accidentally try processing the trigger file as data
+* Fixed metadata parsing for root files
 
 
 0.1.2 (2025-10-16)

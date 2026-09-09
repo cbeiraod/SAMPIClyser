@@ -458,9 +458,16 @@ def load_root_metadata(file_path: str) -> dict[str, object]:
             # Parse types
             if key == 'timestamp':
                 value = datetime.datetime.fromisoformat(raw)
-            elif key in ['num_channels', 'enabled_channels_mask']:
+            elif key in ['num_channels', 'enabled_channels_mask', 'data_in_file_type']:
                 value = int(raw)
-            elif key in ['reduced_data_type', 'without_waveform', 'tdc_like_files', 'inl_correction', 'adc_correction']:
+            elif key in [
+                'reduced_data_type',
+                'without_waveform',
+                'tdc_like_files',
+                'compact_binary_data',
+                'inl_correction',
+                'adc_correction',
+            ]:
                 value = False if raw == 'False' else True
             else:
                 # Default: raw may be bytes or numpy scalar
