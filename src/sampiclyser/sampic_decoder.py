@@ -560,7 +560,11 @@ class SAMPIC_Run_Decoder:
             If `run_dir_path` does not exist or is not a directory.
         """
         self.run_base_path = run_dir_path
-        self.run_files = natsorted(list(self.run_base_path.glob("*.bin*")))
+
+        all_files = natsorted(list(self.run_base_path.glob("*.bin*")))
+
+        self.trigger_files = [f for f in all_files if "_trigger_data.bin" in f.name]
+        self.run_files = [f for f in all_files if "_trigger_data.bin" not in f.name]
 
     @contextmanager
     def open_sampic_file_in_chunks_and_get_header(
