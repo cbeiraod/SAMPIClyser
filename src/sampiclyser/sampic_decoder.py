@@ -76,8 +76,10 @@ SAMPIC_Schema_Info = {
     "FPGATimeStamp": ("uint64", pa.uint64(), np.uint64),
     "StartOfADCRamp": ("int32", pa.int32(), np.int32),
     "PhysicalCell0Time": ("float64", pa.float64(), np.double),
-    # "OrderedCell0Time": ("float64", pa.float64(), np.double), # timestamp of first sample in ns from run start
+    "OrderedCell0Time": ("float64", pa.float64(), np.double),  # timestamp of first sample in ns from run start
+    "Cell0Time": ("float64", pa.float64(), np.double),  # is this the same as above?
     "ADCCounterLatched": ("int32", pa.int32(), np.int32),
+    "FirstSampleTimeStamp": ("float64", pa.float64(), np.double),
     # "TriggerPosition": (None, pa.list_(pa.int32()), np.int32, 64), # last samples may be affected by disconnecting, so need to be corrected
     # … etc …
 }
