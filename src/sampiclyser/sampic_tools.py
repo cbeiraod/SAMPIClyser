@@ -599,12 +599,15 @@ def plot_hit_rate(  # noqa: max-complexity=22
     is_data: bool = True,
     color="C0",
     title: str | None = None,
+    use_unixtime: bool = False,
 ) -> plt.Figure:
     """
     Plot the hit rate (or raw hits) as a function of time from large data files.
 
-    Streams the “UnixTime” column in batches from a Feather, Parquet, or ROOT file,
-    bins events into fixed-width time intervals, and renders a CMS-style time series.
+    Streams the "FirstSampleTime_in_ps" column in batches from a Feather, Parquet, or
+    ROOT file, bins hits into fixed-width time intervals, and renders a
+    CMS-style time series. Optionally uses the "UnixTime" column instead of the
+    "FirstSampleTime" column, but not all SAMPIC binary formats have unix time.
 
     Parameters
     ----------
@@ -646,6 +649,9 @@ def plot_hit_rate(  # noqa: max-complexity=22
         Matplotlib color for the line or bars (default: `"C0"`).
     title : str or None, optional
         Main title for the figure; if None, no title is drawn (default: None).
+    use_unixtime : bool, optional
+        If set, will use unix time for determining the hit time instead of
+        the ps offset from start of run.
 
     Returns
     -------
@@ -665,6 +671,13 @@ def plot_hit_rate(  # noqa: max-complexity=22
     - X-axis tick formatting uses Matplotlib's `AutoDateLocator` and
       `AutoDateFormatter` for sensible date/time labels across variable spans.
     """
+    # Implement version protection here
+    metadata = get_file_metadata(file_path)
+    if 'sampiclyser_version' not in metadata:
+        raise RuntimeError(
+            "The selected file was processed with SAMPIClyser which predates version v0.2.0. Will stop execution here, consider reconverting the files from RAW."
+        )
+
     # enforce minimum bin size
     bin_size = max(bin_size, 0.1)
 
@@ -675,22 +688,44 @@ def plot_hit_rate(  # noqa: max-complexity=22
         run_start_ts = run_start.timestamp()
     else:
         run_start_ts = float(run_start)
+        run_start = datetime.datetime.fromtimestamp(run_start_ts)
     # align to bin boundary
     run_start_ts = math.floor(run_start_ts / bin_size) * bin_size
 
     # apply user override
     if start_time is not None:
+        if not isinstance(start_time, datetime.datetime):
+            start_time = datetime.datetime.fromtimestamp(start_time)
+        # filter_start_time_ts = start_time.timestamp()
+
         st = start_time.timestamp() if isinstance(start_time, datetime.datetime) else float(start_time)
         if st > run_start_ts:
             run_start_ts = math.floor(st / bin_size) * bin_size
+    if end_time is not None:
+        if not isinstance(end_time, datetime.datetime):
+            end_time = datetime.datetime.fromtimestamp(end_time)
+        # filter_end_time_ts = end_time.timestamp()
 
     counts = Counter()
 
-    for batch in open_hit_reader(file_path=file_path, cols=["UnixTime"], batch_size=batch_size, root_tree=root_tree):
-        arr = batch["UnixTime"].to_numpy()
+    # This needs to be robust and use autoconversion if selected and applicable, use old_file to see if needed
+    columns = ["FirstSampleTime_in_ps"]
+    if use_unixtime:
+        columns = ["UnixTime"]
+
+    for batch in open_hit_reader(file_path=file_path, cols=columns, batch_size=batch_size, root_tree=root_tree):
+        if not use_unixtime:
+            arr = batch["FirstSampleTime_in_ps"].to_numpy()
+        else:
+            arr = batch["UnixTime"].to_numpy()
 
         for t in arr:
-            idx = int((t - run_start_ts) // bin_size)
+            if not use_unixtime:
+                hit_time = (run_start + datetime.timedelta(microseconds=t / 1e6)).timestamp()
+                hit_time_delta = hit_time - run_start_ts
+            else:
+                hit_time_delta = t - run_start_ts
+            idx = int(hit_time_delta // bin_size)
             if idx >= 0:
                 counts[idx] += 1
 
@@ -744,7 +779,11 @@ def plot_hit_rate(  # noqa: max-complexity=22
         if log_y:
             ax.set_yscale('log')
 
-        ax.set_xlabel("Time")
+        if not use_unixtime:
+            ax.set_xlabel("Hit Time")
+        else:
+            ax.set_xlabel("Unix Timestamp")
+
         if plot_hits:
             ax.set_ylabel(f"Hits per {bin_size:.1f} s")
         else:

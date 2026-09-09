@@ -101,7 +101,7 @@ def sampiclyser_version(
         click.echo('\tThe SAMPIClyser version used to process this file was: ', nl=False)
         click.secho('v' + metadata['sampiclyser_version'], fg='blue')
     else:
-        click.echo('\tThe SAMPIClyser version used to process this file predates v0.1.3 so it can not be determined')
+        click.echo('\tThe SAMPIClyser version used to process this file predates v0.2.0 so it can not be determined')
 
 
 @cli.command()
@@ -318,6 +318,7 @@ def plot_hits(
     default=None,
     help='The plot title to put at the top of the figure. Default: None',
 )
+@click.option('--unixtime', 'use_unixtime', is_flag=True, help='Use unix time instead of proper time')
 def plot_hit_rate(
     decoded_file: Path,
     bin_size: float,
@@ -335,6 +336,7 @@ def plot_hit_rate(
     rlabel: str,
     is_data: bool,
     title: str,
+    use_unixtime: bool,
 ):
     """
     Plot hit rate vs time from a decoded SAMPIC run file.
@@ -355,6 +357,7 @@ def plot_hit_rate(
         rlabel=rlabel,
         is_data=is_data,
         title=title,
+        use_unixtime=use_unixtime,
     )
 
     if output:
