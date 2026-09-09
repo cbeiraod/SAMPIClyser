@@ -1148,7 +1148,7 @@ class SAMPIC_Run_Decoder:
                 triggers: List = record.pop("TriggerPosition")
                 record["NumTriggerSamples"] = triggers.count(1)
 
-            # Add here to reorder the samples if needed
+            # Add here to reorder the samples inside the hit if needed
             # if not self.run_header.compact_binary_data:
             #    pass
             # else:
@@ -1180,6 +1180,28 @@ class SAMPIC_Run_Decoder:
                     first_header = header
                     self.run_header = header
                     field_specs = generate_field_specs()
+
+                    # Print out warnings about assumptions for time reconstruction
+                    if self.run_header.compact_binary_data and self.run_header.data_in_file_type < 3:
+                        print(
+                            colored("Warning:", "yellow"),
+                            "The RAW data file was taken in a compact mode and with hit time information (when each hit happened). In this mode the time counter appears to wrap at the 3.05 hour mark (40 bits at 100Mhz maybe?), any run longer than 3.05h will not be able to uniquely determine when a hit happened, the hit ordering helps but it is impossible to know with certainty if only 1 or more wraps happened between any 2 hits. Execution will proceed assuming the system was configured such that at least one channel had a few hits within the 3.05h period, thus each decrease in the timestamp is associated with one wrap of the counter (modulo the out of order events).",
+                        )
+                    if self.run_header.compact_binary_data and self.run_header.data_in_file_type == 3:
+                        print(
+                            colored("Warning:", "yellow"),
+                            "The RAW data file was taken in a compact mode and without hit time information (when each hit happened). In this mode, a lot of the SAMPIClyser analysis can not be performed. SAMPIClyser will still convert the file and make the information that is present available in the unified interface.",
+                        )
+                    if self.run_header.compact_binary_data and self.run_header.data_in_file_type > 3:
+                        print(
+                            colored("Error:", "red"),
+                            f"Unknown compact data format (type: {self.run_header.data_in_file_type}), this should not exist according to the documentation the binary converter was based on. Binary conversion will likely fail and give weird errors.",
+                        )
+                    if not self.run_header.compact_binary_data:  # Is the comment below still true if not compact and reduced is selected?
+                        print(
+                            colored("Warning:", "yellow"),
+                            "The RAW data file was taken with hit time information (when each hit happened). In this mode the time counter appears to wrap at the 3.05 hour mark (40 bits at 100Mhz maybe?), any run longer than 3.05h will not be able to uniquely determine when a hit happened, the hit ordering helps but it is impossible to know with certainty if only 1 or more wraps happened between any 2 hits. This mode also has a Unix Timestamp of when the hit data reached the computer, this helps restore time ordering. Execution will proceed assuming this information is available and will use it to restore correct timing.",
+                        )
 
                 # Stream through chunks
                 for chunk in body_gen:
