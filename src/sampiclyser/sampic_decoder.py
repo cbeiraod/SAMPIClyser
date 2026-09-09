@@ -23,7 +23,9 @@
 
 import mmap
 import re
+import statistics
 import struct
+from collections import deque
 from contextlib import contextmanager
 from dataclasses import dataclass
 from dataclasses import field
@@ -56,7 +58,8 @@ SAMPIC_Schema_Info = {
     "HitNumber": ("int32", pa.int32(), np.int32),
     # From SAMPIC
     "Channel": ("uint8", pa.uint8(), np.uint8),
-    "FirstSampleTime": ("float64", pa.float64(), np.double),
+    "FirstSampleTime_in_ps": ("int64", pa.int64(), np.int64),
+    "FirstSampleTime_in_ps_fine": ("float64", pa.float64(), np.double),
     "RawTOTValue": ("int32", pa.int32(), np.int32),
     "TOTValue": ("int32", pa.int32(), np.int32),
     # From SAMPIC: Samples / Waveform
@@ -880,6 +883,10 @@ class SAMPIC_Run_Decoder:
         limit_hits: int = 0,
         extra_header_bytes: int = 1,
         chunk_size: int = 64 * 1024,
+        coarse_freq_hz: int = 100_000_000,  # new
+        coarse_bit_depth: int = 40,  # new
+        timestamp_window_size: int = 64,  # new
+        max_out_of_time_s: float = 10,  # new
         debug=False,
     ) -> Generator[Dict[str, Any], None, None]:
         """
@@ -1107,6 +1114,11 @@ class SAMPIC_Run_Decoder:
 
             return field_specs
 
+        timestamp_fifo = deque(maxlen=timestamp_window_size)
+        self.printed_double_time_resolution_warning = False
+        run_start = None
+        max_time_counter_ps = calculate_wrap_offset_ps(coarse_bit_depth, coarse_freq_hz)
+
         # Helper to try parsing one record from the buffer
         def try_parse_record(field_specs) -> Dict[str, Any] | None:
             view = memoryview(buffer)
@@ -1122,7 +1134,8 @@ class SAMPIC_Run_Decoder:
                 "HitNumber": None,
                 # From SAMPIC
                 "Channel": None,  # Always present
-                "FirstSampleTime": None,
+                "FirstSampleTime_in_ps": None,
+                "FirstSampleTime_in_ps_fine": None,
                 "RawTOTValue": None,  # Always present
                 "TOTValue": None,  # Always present
                 # From SAMPIC: Samples / Waveform
@@ -1204,12 +1217,79 @@ class SAMPIC_Run_Decoder:
             if "Ch" in record:
                 record['Channel'] = record.pop("Ch")
 
-            if "OrderedCell0Time" in record:
-                record["FirstSampleTime"] = record.pop("OrderedCell0Time")
-            elif "Cell0Time" in record:
-                record["FirstSampleTime"] = record.pop("Cell0Time")
-            elif self.run_header.compact_binary_data and "FirstSampleTimeStamp" in record:
-                record["FirstSampleTime"] = record.pop("FirstSampleTimeStamp")
+            if not self.run_header.compact_binary_data:
+                if "UnixTime" not in record:
+                    raise RuntimeError("Can't find the UnixTime when it should exist... perhaps the data format changed... again :(")
+                timestamp = record["UnixTime"]
+                if "OrderedCell0Time" in record:
+                    cell0Time = record["OrderedCell0Time"]
+                elif "Cell0Time" in record:
+                    cell0Time = record["Cell0Time"]
+                else:
+                    raise RuntimeError("Can't find the Cell0Time for ordering hits... perhaps the data format changed... again :( ")
+
+                if not self.printed_double_time_resolution_warning and cell0Time >= MAX_1PS_RESOLUTION_NS:
+                    print(
+                        colored("Warning:", "yellow"),
+                        f"File contains hits where hit time (OrderedCell0Time or cell0Time) exceed {MAX_1PS_RESOLUTION_NS} ns. These hits will have inherent time resolution worse than 1 ps.",
+                    )
+                    self.printed_double_time_resolution_warning = True
+
+                # fetch unix time and compare against timestamp. if timestamp is significantly smaller, then a loop occured, so add a multiple of 3.05 to get good time
+
+                # Convert cell0Time into seconds and compare against the elapsed time according to the UnixTimestamp
+                delta = (timestamp - run_start) - cell0Time / 10**9
+                wraps = floor((delta + max_out_of_time_s) / (max_time_counter_ps / 10**12))
+
+                hit_time_ps, hit_time_remainder_ps = convert_daq_ns_double_to_ps_int(cell0Time, wraps, max_time_counter_ps)
+
+                new_delta = (timestamp - run_start) - hit_time_ps / 10**12
+                if new_delta > max_out_of_time_s:
+                    print(
+                        colored("Warning:", "yellow"),
+                        f"After unwrapping, we still observe a large time difference (Delta={new_delta}), this could indicate some unexpected problem.",
+                    )
+
+                record["FirstSampleTime_in_ps"] = hit_time_ps
+                record["FirstSampleTime_in_ps_fine"] = hit_time_remainder_ps
+            elif self.run_header.data_in_file_type < 3:
+                if "FirstSampleTimeStamp" in record:
+                    cell0Time = record["FirstSampleTimeStamp"]
+                else:
+                    raise RuntimeError(
+                        "Can't find the FirstSampleTimeStamp for ordering hits... perhaps the data format changed... again :( "
+                    )
+
+                if not self.printed_double_time_resolution_warning and cell0Time >= MAX_1PS_RESOLUTION_NS:
+                    print(
+                        colored("Warning:", "yellow"),
+                        f"File contains hits where hit time (FirstSampleTimeStamp) exceed {MAX_1PS_RESOLUTION_NS} ns. These hits will have inherent time resolution worse than 1 ps.",
+                    )
+                    self.printed_double_time_resolution_warning = True
+
+                # Here we use a different algorithm where we need to identify when the counter goes wraps,
+                # but we do not have a UnixTimestamp to help guide us.
+                # I decided to approach this by having a FIFO of the last N unwrapped hit times. Then I just need
+                # to find the number of wraps that brings the current hit closest to the mean of the FIFO. Should
+                # be robust against all effects smaller than half the FIFO size
+
+                if len(timestamp_fifo) == 0:
+                    wraps = 0
+                else:
+                    expected_absolute_time_ps = statistics.median(timestamp_fifo)
+
+                    # Get only the ps part of cell0Time, without any wraps, to compare against expected
+                    intermediate_time_ps, _ = convert_daq_ns_double_to_ps_int(cell0Time, 0, max_time_counter_ps)
+
+                    wraps = round((expected_absolute_time_ps - intermediate_time_ps) / (max_time_counter_ps))
+
+                hit_time_ps, hit_time_remainder_ps = convert_daq_ns_double_to_ps_int(cell0Time, wraps, max_time_counter_ps)
+
+                record["FirstSampleTime_in_ps"] = hit_time_ps
+                record["FirstSampleTime_in_ps_fine"] = hit_time_remainder_ps
+
+                timestamp_fifo.append(hit_time_ps)
+                print(len(timestamp_fifo))
 
             if not self.run_header.compact_binary_data and "CellInfo" in record:
                 record["FirstCellIndex"] = 64 - record.pop("CellInfo")
@@ -1250,6 +1330,7 @@ class SAMPIC_Run_Decoder:
                     first_header = header
                     self.run_header = header
                     field_specs = generate_field_specs()
+                    run_start = self.run_header.timestamp.timestamp()
 
                     # Print out warnings about assumptions for time reconstruction
                     if self.run_header.compact_binary_data and self.run_header.data_in_file_type < 3:
