@@ -28,6 +28,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from dataclasses import field
 from datetime import datetime
+from math import floor
 from pathlib import Path
 from struct import Struct
 from typing import Any
@@ -87,6 +88,69 @@ SAMPIC_Schema_Info = {
 # The maximum nanosecond timestamp before IEEE 754 64-bit floats
 # lose 1 picosecond resolution (ULP jumps from ~0.97 ps to ~1.95 ps).
 MAX_1PS_RESOLUTION_NS = 2.0**43
+
+
+def calculate_wrap_offset_ps(bit_depth: int, freq_hz: int) -> int:
+    """
+    Calculates the exact time offset in picoseconds for a single hardware counter wrap.
+
+    Args:
+        bit_depth: The number of bits of the coarse counter (e.g., 40)
+        freq_hz: The frequency of the coarse clock in Hz (e.g., 100_000_000)
+
+    Returns:
+        The exact offset in picoseconds as a Python integer.
+    """
+    # Total number of ticks before the counter rolls over to 0
+    total_ticks = 1 << bit_depth
+
+    # 1 second = 1,000,000,000,000 picoseconds
+    PICOSECONDS_PER_SECOND = 1_000_000_000_000
+
+    # Multiply first, then divide to prevent floating point conversion and loss of precision
+    offset_ps = (total_ticks * PICOSECONDS_PER_SECOND) // freq_hz
+
+    # Sanity check: Ensure the frequency divides cleanly into picoseconds
+    if (total_ticks * PICOSECONDS_PER_SECOND) % freq_hz != 0:
+        print(
+            colored("Warning:", "yellow"),
+            "Clock frequency does not map perfectly to integer picoseconds - A fractional picosecond of drift will accumulate on every wrap.",
+        )
+
+    return offset_ps
+
+
+def convert_daq_ns_double_to_ps_int(daq_time_ns: float, wrap_count: int, max_counter: int):
+    """
+    Safely converts DAQ nanosecond floats to absolute int64 picoseconds.
+
+    Args:
+        daq_time_ns: float (from the DAQ, which is actually a double)
+        wrap_count: int (how many times the counter rolled over)
+        max_counter: int (the maximum number of values the counter counts before it wraps)
+    """
+
+    # The following sequence is important to be done in this way to avoid any rounding from floating point precision
+    # 1 - Extract the whole nanoseconds (integer part)
+    # Using floor ensures we safely grab the integer part without float rounding issues.
+    hit_time_ns = floor(daq_time_ns)
+
+    # 2 - Extract the exact fractional nanoseconds and convert to ps
+    hit_time_remainder_ps = (daq_time_ns - hit_time_ns) * 1000
+
+    # 3 - Extract integer picoseconds from the remainder
+    hit_time_ps = floor(hit_time_remainder_ps)
+
+    # 4 - Extract the sub-picosecond remainder
+    hit_time_remainder_ps = hit_time_remainder_ps - hit_time_ps
+
+    # 5 - Combine the integers into a base picosecond timestamp
+    hit_time_ps += hit_time_ns * 1000
+
+    # 6 - Adjust hit time for the number of wraps
+    hit_time_ps = hit_time_ps + wrap_count * max_counter
+
+    return hit_time_ps, hit_time_remainder_ps
 
 
 def build_schema(
