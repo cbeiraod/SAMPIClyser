@@ -40,6 +40,7 @@ from typing import Optional
 from typing import Sequence
 from typing import Set
 from typing import Tuple
+from typing import TypeVar
 from typing import Union
 
 import awkward as ak
@@ -71,6 +72,9 @@ from sampiclyser.sampic_decoder import prepare_header_metadata_in_bytes
 
 sampiclyser_style = hep.style.CMS
 
+# Define a type variable restricted to int or float
+TimeType = TypeVar('TimeType', int, float)
+
 
 @dataclass(order=True)
 class TimestampedRecord:
@@ -79,15 +83,16 @@ class TimestampedRecord:
 
     Attributes
     ----------
-    timestamp : float
-        The hit timestamp (seconds since epoch or reconstructed).
+    timestamp : TimeType
+        The hit timestamp. Use `int` for exact picoseconds,
+        or `float` for legacy second (since epoch or reconstructed) configurations.
     channel : int
         The channel where the hit was recorded
     record : Any
         The full hit data (e.g., dict of field values).  Not used for ordering.
     """
 
-    timestamp: float
+    timestamp: TimeType
     channel: int
     record: Any = field(compare=False)
 
