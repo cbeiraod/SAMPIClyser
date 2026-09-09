@@ -1,7 +1,7 @@
 Changelog
 =========
 
-Current (2026-08-09)
+Current (2026-09-09)
 --------------------
 
 * Implemented some CLI entry points to inspect software versions used to produce files (both binary and decoded)
@@ -9,6 +9,7 @@ Current (2026-08-09)
 * Added new command line tool to convert data file formats
 * Added a new experimental option for processing a record batch into root without going through a pandas data frame
 * Added the new hit time unwrap logic
+* Added a guard to not accidentally try processing the trigger file as data
 
 
 0.1.2 (2025-10-16)
