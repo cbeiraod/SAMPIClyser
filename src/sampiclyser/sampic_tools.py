@@ -583,6 +583,27 @@ def get_period_from_file_metadata(metadata: dict[str, object]) -> float:
     return period
 
 
+def get_sampiclyser_version_info_from_file_metadata(metadata: dict[str, object]) -> dict:
+    if 'sampiclyser_version' not in metadata:
+        return None
+
+    version_string = metadata['sampiclyser_version']
+    if version_string[0] == 'v' or version_string[0] == 'V':
+        version_string = version_string[1:]
+
+    numbers = version_string.split('.')
+
+    major = int(numbers[0])
+    minor = int(numbers[1])
+    patch = int(numbers[2])
+
+    return {
+        "major": major,
+        "minor": minor,
+        "patch": patch,
+    }
+
+
 def plot_hit_rate(  # noqa: max-complexity=22
     file_path: Path,
     bin_size: float = 1.0,
@@ -673,7 +694,8 @@ def plot_hit_rate(  # noqa: max-complexity=22
     """
     # Implement version protection here
     metadata = get_file_metadata(file_path)
-    if 'sampiclyser_version' not in metadata:
+    version_info = get_sampiclyser_version_info_from_file_metadata(metadata)
+    if version_info is None or (version_info['major'] == 0 and version_info['minor'] <= 1):
         raise RuntimeError(
             "The selected file was processed with SAMPIClyser which predates version v0.2.0. Will stop execution here, consider reconverting the files from RAW."
         )
