@@ -1293,7 +1293,6 @@ class SAMPIC_Run_Decoder:
                 record["FirstSampleTime_in_ps_fine"] = hit_time_remainder_ps
 
                 timestamp_fifo.append(hit_time_ps)
-                print(len(timestamp_fifo))
 
             if not self.run_header.compact_binary_data and "CellInfo" in record:
                 record["FirstCellIndex"] = 64 - record.pop("CellInfo")
