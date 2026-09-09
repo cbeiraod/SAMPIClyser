@@ -84,6 +84,10 @@ SAMPIC_Schema_Info = {
     # … etc …
 }
 
+# The maximum nanosecond timestamp before IEEE 754 64-bit floats
+# lose 1 picosecond resolution (ULP jumps from ~0.97 ps to ~1.95 ps).
+MAX_1PS_RESOLUTION_NS = 2.0**43
+
 
 def build_schema(
     df: pd.DataFrame,
