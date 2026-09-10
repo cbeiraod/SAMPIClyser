@@ -33,6 +33,7 @@ dependencies = [
     "matplotlib",
     "click",
     "scipy",
+    "pyyaml",
 ]
 
 [project.urls]
