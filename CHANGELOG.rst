@@ -1,7 +1,7 @@
 Changelog
 =========
 
-Current (2026-09-09)
+0.2.0 (2026-09-09)
 --------------------
 
 * Implemented some CLI entry points to inspect software versions used to produce files (both binary and decoded)
