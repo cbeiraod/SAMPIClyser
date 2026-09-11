@@ -39,6 +39,7 @@ from typing import Generator
 from typing import List
 from typing import Optional
 from typing import Tuple
+from typing import Union
 
 import awkward as ak
 import numpy as np
@@ -157,7 +158,7 @@ def convert_daq_ns_double_to_ps_int(daq_time_ns: float, wrap_count: int, max_cou
 
 
 def build_schema(
-    df: pd.DataFrame,
+    columns: Union[List[str], pd.Index],
     metadata: Optional[Dict[bytes, bytes]] = None,
     schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info,
 ) -> pa.Schema:
@@ -194,7 +195,7 @@ def build_schema(
     """
     # Build list of fields with valid PyArrow types
     try:
-        fields = [pa.field(name, schemaInfo[name][1]) for name in schemaInfo if schemaInfo[name][1] is not None and name in df.columns]
+        fields = [pa.field(name, schemaInfo[name][1]) for name in schemaInfo if schemaInfo[name][1] is not None and name in columns]
     except KeyError as e:
         raise KeyError(f"Field '{e.args[0]}' missing PyArrow type in schemaInfo")
 
@@ -345,17 +346,17 @@ def prepare_header_metadata_in_bytes(metadata: Dict[str, Any]) -> Dict[bytes, by
         Mapping of metadata keys to Python values.  Supported keys and types:
 
         - Text fields (ASCII strings):
-          'software_version', 'sampic_mezzanine_board_version',
+          'sampiclyser_version', 'software_version', 'sampic_mezzanine_board_version',
           'ctrl_fpga_firmware_version', 'sampling_frequency',
           'hit_number_format', 'unix_time_format', 'data_format',
           'trigger_position_format', 'data_samples_format'
         - Timestamp field (datetime.datetime):
           'timestamp'
         - Integer fields (int):
-          'num_channels', 'enabled_channels_mask'
+          'num_channels', 'enabled_channels_mask', 'data_in_file_type'
         - Boolean flags (bool):
           'reduced_data_type', 'without_waveform', 'tdc_like_files',
-          'inl_correction', 'adc_correction'
+          'inl_correction', 'adc_correction', 'compact_binary_data'
 
     Returns
     -------
@@ -384,6 +385,7 @@ def prepare_header_metadata_in_bytes(metadata: Dict[str, Any]) -> Dict[bytes, by
 
         # String fields
         if key in [
+            'sampiclyser_version',
             'software_version',
             'sampic_mezzanine_board_version',
             'ctrl_fpga_firmware_version',
@@ -406,7 +408,7 @@ def prepare_header_metadata_in_bytes(metadata: Dict[str, Any]) -> Dict[bytes, by
             new_val = struct.pack('<d', val.timestamp())
 
         # Integer fields
-        elif key in ['num_channels', 'enabled_channels_mask']:
+        elif key in ['num_channels', 'enabled_channels_mask', 'data_in_file_type']:
             if not isinstance(val, int):
                 raise ValueError(f"Expected int for metadata '{key}', got {type(val)}")
             new_val = struct.pack('<I', val)
@@ -418,6 +420,7 @@ def prepare_header_metadata_in_bytes(metadata: Dict[str, Any]) -> Dict[bytes, by
             'tdc_like_files',
             'inl_correction',
             'adc_correction',
+            'compact_binary_data',
         ]:
             if not isinstance(val, bool):
                 raise ValueError(f"Expected bool for metadata '{key}', got {type(val)}")
@@ -1453,6 +1456,7 @@ class SAMPIC_Run_Decoder:
         metadata : dict of str → object
             Dictionary mapping metadata keys to Python values, including:
 
+            - `sampiclyser_version` : str
             - `software_version` : str
             - `timestamp` : datetime.datetime
             - `sampic_mezzanine_board_version` : str
@@ -1463,6 +1467,8 @@ class SAMPIC_Run_Decoder:
             - `reduced_data_type` : bool
             - `without_waveform` : bool
             - `tdc_like_files` : bool
+            - `compact_binary_data` : bool
+            - `data_in_file_type` : int
             - `hit_number_format` : str
             - `unix_time_format` : str
             - `data_format` : str
@@ -1625,7 +1631,7 @@ class SAMPIC_Run_Decoder:
             df_batch = pd.DataFrame(buffer)
             convert_df_with_schema(df_batch)
             if first:
-                schema = build_schema(df_batch)
+                schema = build_schema(df_batch.columns)
                 schema = schema.with_metadata(self.prepare_header_metadata())
             table = pa.Table.from_pandas(df_batch, schema=schema, preserve_index=False)
             df_batch.reset_index(drop=True, inplace=True)
@@ -1660,7 +1666,7 @@ class SAMPIC_Run_Decoder:
             df_batch = pd.DataFrame(buffer)
             convert_df_with_schema(df_batch)
             if first:
-                schema = build_schema(df_batch)
+                schema = build_schema(df_batch.columns)
                 schema = schema.with_metadata(self.prepare_header_metadata())
             table = pa.Table.from_pandas(df_batch, schema=schema, preserve_index=False)
             df_batch.reset_index(drop=True, inplace=True)
