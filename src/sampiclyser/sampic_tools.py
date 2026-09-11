@@ -86,6 +86,9 @@ class TimestampedRecord:
     timestamp : TimeType
         The hit timestamp. Use `int` for exact picoseconds,
         or `float` for legacy second (since epoch or reconstructed) configurations.
+    fine_timestamp : float
+        The sub-ps timestamp, when using the updated hit time logic implementing time
+        in ps counter and separate fine grain timing for sub ps timing
     channel : int
         The channel where the hit was recorded
     record : Any
@@ -93,6 +96,7 @@ class TimestampedRecord:
     """
 
     timestamp: TimeType
+    fine_timestamp: float
     channel: int
     record: Any = field(compare=False)
 
@@ -2204,7 +2208,8 @@ def sampic_reconstruct_time_dict(rec: dict) -> float:
     rec : dict
         Dictionary containing the required SAMPIC fields for time reconstruction
         Required:
-            UnixTime -
+            FirstSampleTime_in_ps - time in ps since the start of the run until the first sample in the waveform
+            FirstSampleTime_in_ps_fine - fine time (sub ps) to add to the time in ps to get the full time since the start of the run until the first sample in the waveform
 
     Raises
     ------
@@ -2212,9 +2217,8 @@ def sampic_reconstruct_time_dict(rec: dict) -> float:
         If `use_unix_time` is False and no reconstruction algorithm
         is provided in `_reconstruct_time`.
     """
-    # Placeholder for custom SAMPIC time reconstruction logic
-    # Must return a float timestamp for a hit record `rec`
-    raise ValueError("Custom time reconstruction not implemented")
+    # Should we modify the below to add a correction until the pulse start?
+    return rec['FirstSampleTime_in_ps'], rec['FirstSampleTime_in_ps_fine']
 
 
 def extract_ts_unix_time(batch: Union[RecordBatch, ak.highlevel.Array], idx: int) -> float:
@@ -2253,7 +2257,7 @@ def extract_ts_unix_time(batch: Union[RecordBatch, ak.highlevel.Array], idx: int
         except KeyError:
             raise KeyError("'UnixTime' column not found in RecordBatch")
         # as_py() handles possible nulls; cast to float
-        return float(column[idx].as_py())
+        return float(column[idx].as_py()), 0.0
 
     # Awkward Array path
     if isinstance(batch, ak.highlevel.Array):
@@ -2261,7 +2265,7 @@ def extract_ts_unix_time(batch: Union[RecordBatch, ak.highlevel.Array], idx: int
             arr = np.asarray(batch['UnixTime'])
         except Exception:
             raise KeyError("'UnixTime' field not found in Awkward Array")
-        return float(arr[idx])
+        return float(arr[idx]), 0.0
 
     # Unsupported batch type
     raise TypeError(f"Unsupported batch type {type(batch)}, expected RecordBatch or ak.Array")
@@ -2323,10 +2327,12 @@ def extract_ts_SAMPIC(batch: Union[RecordBatch, ak.highlevel.Array], idx: int) -
         rec[col] = value
 
     # Compute timestamp
-    ts = sampic_reconstruct_time_dict(rec)
-    if not isinstance(ts, (int, float)):
-        raise ValueError(f"Reconstructed timestamp must be numeric, got {type(ts)}")
-    return float(ts)
+    ts, ts_fine = sampic_reconstruct_time_dict(rec)
+    # if not isinstance(ts, int):
+    #    raise ValueError(f"Reconstructed timestamp must be integer, got {type(ts)}")
+    # if not isinstance(ts_fine, float):
+    #    raise ValueError(f"Reconstructed fine timestamp must be float, got {type(ts)}")
+    return ts, ts_fine
 
 
 def extract_unix_time_and_record(batch: Union[RecordBatch, ak.highlevel.Array], idx: int) -> Tuple[float, Dict[str, Any]]:
@@ -2389,7 +2395,7 @@ def extract_unix_time_and_record(batch: Union[RecordBatch, ak.highlevel.Array], 
     except (TypeError, ValueError):
         raise ValueError(f"Invalid UnixTime value: {rec.get('UnixTime')}")
 
-    return ts, rec
+    return ts, 0.0, rec
 
 
 def extract_SAMPIC_time_and_record(batch: Union[RecordBatch, ak.highlevel.Array], idx: int) -> Tuple[float, Dict[str, Any]]:
@@ -2446,10 +2452,12 @@ def extract_SAMPIC_time_and_record(batch: Union[RecordBatch, ak.highlevel.Array]
             raise IndexError(f"Index {idx} out of bounds for field '{col}'")
 
     # Reconstruct timestamp
-    ts = sampic_reconstruct_time_dict(rec)
-    if not isinstance(ts, (int, float)):
-        raise ValueError(f"Reconstructed timestamp must be numeric, got {type(ts)}")
-    return float(ts), rec
+    ts, ts_fine = sampic_reconstruct_time_dict(rec)
+    # if not isinstance(ts, int):
+    #    raise ValueError(f"Reconstructed timestamp must be integer, got {type(ts)}")
+    # if not isinstance(ts_fine, float):
+    #    raise ValueError(f"Reconstructed fine timestamp must be float, got {type(ts)}")
+    return ts, ts_fine, rec
 
 
 def check_time_ordering(
@@ -2495,7 +2503,8 @@ def check_time_ordering(
     """
 
     violations: List[Tuple[int, float, float]] = []
-    last_time: Optional[float] = None
+    last_time: Optional[Union[float, int]] = None
+    last_time_fine: Optional[float] = None
     hit_idx = 0
 
     # Select extractor
@@ -2504,17 +2513,25 @@ def check_time_ordering(
     else:
         extractor = lambda batch, i: extract_ts_SAMPIC(batch, i)
 
+    columns = [
+        'FirstSampleTime_in_ps',
+        'FirstSampleTime_in_ps_fine',
+    ]
+    if use_unix_time:
+        columns += ['UnixTime']
+
     # Stream through hits
-    for batch in open_hit_reader(file_path, cols=['UnixTime'], batch_size=batch_size, root_tree=root_tree):
+    for batch in open_hit_reader(file_path, cols=columns, batch_size=batch_size, root_tree=root_tree):
         # determine number of entries in this batch
-        n = batch.num_rows if isinstance(batch, RecordBatch) else len(batch['UnixTime'])
+        n = batch.num_rows if isinstance(batch, RecordBatch) else len(batch['FirstSampleTime_in_ps'])
         for i in range(n):
-            ts = extractor(batch, i)
-            if last_time is not None and ts < last_time:
-                violations.append((hit_idx, last_time, ts))
+            ts, ts_fine = extractor(batch, i)
+            if last_time is not None and (ts < last_time or (ts == last_time and ts_fine < last_time_fine)):
+                violations.append((hit_idx, last_time, ts, ts_fine))
                 if not find_all:
                     return violations
             last_time = ts
+            last_time_fine = ts_fine
             hit_idx += 1
 
     return violations
@@ -2629,7 +2646,7 @@ def reprocess_data_files(
             columns = [c for c in columns if c in restrict_columns]
         if new_columns is not None:
             columns = columns + [c for c in new_columns if c not in columns]
-        schema = build_schema(metadata=metadata_bytes, schemaInfo=schemaInfo)
+        schema = build_schema(columns, metadata=metadata_bytes, schemaInfo=schemaInfo)
 
     try:
         # Open output writers
@@ -2643,12 +2660,14 @@ def reprocess_data_files(
             feather_writer = ipc.new_file(sink, schema)
         if output_root_path:
             froot = uproot.recreate(output_root_path)
-            froot[root_tree] = build_empty_root_data_with_schema(schemaInfo=schemaInfo)
+            froot[root_tree] = build_empty_root_data_with_schema(schemaInfo=schemaInfo, schema=schema)
             root_tree_obj = froot[root_tree]
 
         yield (columns, schema, feather_writer, parquet_writer, root_tree_obj)
 
     finally:
+        # Add Here preserving the trigger file
+
         # Write metadata TTree for ROOT
         if root_tree_obj is not None and output_root_path:
             # Convert to Awkward Arrays of strings for variable-length support
@@ -2772,6 +2791,7 @@ def reorder_hits(
             extractor = lambda batch, i: extract_unix_time_and_record(batch, i)
         else:
             extractor = lambda batch, i: extract_SAMPIC_time_and_record(batch, i)
+            max_time_offset = max_time_offset * 10**12
 
         heap: List[TimestampedRecord] = []
         current_max_time = None
@@ -2781,10 +2801,10 @@ def reorder_hits(
             n = batch.num_rows if isinstance(batch, RecordBatch) else len(batch[columns[0]])
 
             for i in range(n):
-                ts, rec = extractor(batch, i)
+                ts, ts_fine, rec = extractor(batch, i)
                 if current_max_time is None or ts > current_max_time:
                     current_max_time = ts
-                heapq.heappush(heap, TimestampedRecord(ts, rec["Channel"], rec))
+                heapq.heappush(heap, TimestampedRecord(ts, ts_fine, rec["Channel"], rec))
 
                 # Emit due records
                 if max_time_offset is not None and current_max_time is not None:
