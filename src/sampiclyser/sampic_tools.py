@@ -704,7 +704,6 @@ def plot_hit_rate(  # noqa: max-complexity=22
     bin_size = max(bin_size, 0.1)
 
     # fetch run‐start from metadata; override if start_time provided
-    metadata = get_file_metadata(file_path)
     run_start = metadata.get("timestamp")
     if isinstance(run_start, datetime.datetime):
         run_start_ts = run_start.timestamp()
@@ -775,7 +774,7 @@ def plot_hit_rate(  # noqa: max-complexity=22
     if plot_hits:
         rates = np.array([counts[b] * scale_factor for b in bins], dtype=int)
     else:
-        rates = np.array([counts[b] * scale_factor / bin_size for b in bins], dtype=int)
+        rates = np.array([counts[b] * scale_factor / bin_size for b in bins], dtype=float)
 
     # Apply selected sampiclyser style from mplhep
     with plt.style.context(sampiclyser_style):
