@@ -1,8 +1,14 @@
 Changelog
 =========
 
-0.2.0 (2026-09-09)
+Current (2026-09-11)
 --------------------
+
+* Fixed typing to follow modern practice
+
+
+0.2.0 (2026-09-09)
+------------------
 
 * Implemented some CLI entry points to inspect software versions used to produce files (both binary and decoded)
 * Implemented the new binary versions and made it more robust, to hopefully not be as fragile in the future and be faster to update
