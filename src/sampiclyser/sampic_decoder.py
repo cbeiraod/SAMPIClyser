@@ -1689,6 +1689,8 @@ class SAMPIC_Run_Decoder:
         if root_path:
             self.write_root_header(froot)
 
+        # This is probably the place to put the trigger file processing
+
         # Close writers
         if parquet_writer:
             parquet_writer.close()
