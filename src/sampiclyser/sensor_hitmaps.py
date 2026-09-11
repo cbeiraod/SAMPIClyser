@@ -21,11 +21,9 @@
 # 3. This notice may not be removed or altered from any source distribution.
 #############################################################################
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from math import floor
-from typing import Dict
-from typing import Sequence
-from typing import Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -81,8 +79,8 @@ class SensorSpec:
     """
 
     name: str
-    sampic_map: Dict[int, int]
-    geometry: Tuple  # e.g., ("grid", nrows, ncols, chan2coord),
+    sampic_map: dict[int, int]
+    geometry: tuple  # e.g., ("grid", nrows, ncols, chan2coord),
     #       ("grouped", chan2pixels, nrows, ncols),
     #       ("scatter", chan2coords, pixel_width, pixel_height): TODO: make it respect the global transformation
     cmap: str = "viridis"
@@ -211,7 +209,7 @@ def convert_r_c_to_global(r_local: int, c_local: int, rotations: int, do_mirror:
 def _plot_grid_sensor(
     ax: plt.Axes,
     spec: SensorSpec,
-    hits_by_chan: Dict[int, int],
+    hits_by_chan: dict[int, int],
     norm: Normalize,
     do_sampic_ch: bool = False,
     do_board_ch: bool = False,
@@ -311,7 +309,7 @@ def _plot_grid_sensor(
 def _plot_grouped_sensor(
     ax: plt.Axes,
     spec: SensorSpec,
-    hits_by_chan: Dict[int, int],
+    hits_by_chan: dict[int, int],
     norm: Normalize,
     do_sampic_ch: bool = False,
     do_board_ch: bool = False,
@@ -422,7 +420,7 @@ def _plot_grouped_sensor(
 def _plot_scatter_sensor(
     ax: plt.Axes,
     spec: SensorSpec,
-    hits_by_chan: Dict[int, int],
+    hits_by_chan: dict[int, int],
     norm: Normalize,
     do_sampic_ch: bool = False,
     do_board_ch: bool = False,
@@ -511,8 +509,8 @@ def _plot_scatter_sensor(
 def plot_hitmap(
     summary_df: pd.DataFrame,
     specs: Sequence[SensorSpec],
-    layout: Tuple[int, int],
-    figsize: Tuple[int, float] = (8, 6),
+    layout: tuple[int, int],
+    figsize: tuple[int, float] = (8, 6),
     cmap: str = "viridis",
     log_z: bool = False,
     title: str | None = None,

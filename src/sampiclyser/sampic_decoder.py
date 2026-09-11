@@ -26,6 +26,7 @@ import re
 import statistics
 import struct
 from collections import deque
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from dataclasses import field
@@ -34,12 +35,6 @@ from math import floor
 from pathlib import Path
 from struct import Struct
 from typing import Any
-from typing import Dict
-from typing import Generator
-from typing import List
-from typing import Optional
-from typing import Tuple
-from typing import Union
 
 import awkward as ak
 import numpy as np
@@ -158,9 +153,9 @@ def convert_daq_ns_double_to_ps_int(daq_time_ns: float, wrap_count: int, max_cou
 
 
 def build_schema(
-    columns: Union[List[str], pd.Index],
-    metadata: Optional[Dict[bytes, bytes]] = None,
-    schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info,
+    columns: list[str] | pd.Index,
+    metadata: dict[bytes, bytes] | None = None,
+    schemaInfo: dict[str, tuple] = SAMPIC_Schema_Info,
 ) -> pa.Schema:
     """
     Construct a PyArrow Schema from predefined field types and optional metadata.
@@ -208,7 +203,7 @@ def build_schema(
     return schema
 
 
-def convert_df_with_schema(df: pd.DataFrame, schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info) -> pd.DataFrame:
+def convert_df_with_schema(df: pd.DataFrame, schemaInfo: dict[str, tuple] = SAMPIC_Schema_Info) -> pd.DataFrame:
     """
     Cast DataFrame columns to types defined in the schema information.
 
@@ -241,7 +236,7 @@ def convert_df_with_schema(df: pd.DataFrame, schemaInfo: Dict[str, Tuple] = SAMP
     return df
 
 
-def get_root_data_with_schema(df: pd.DataFrame, schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info) -> Dict[str, np.ndarray]:
+def get_root_data_with_schema(df: pd.DataFrame, schemaInfo: dict[str, tuple] = SAMPIC_Schema_Info) -> dict[str, np.ndarray]:
     """
     Prepare a dictionary of numpy arrays from a DataFrame for ROOT writing.
 
@@ -269,7 +264,7 @@ def get_root_data_with_schema(df: pd.DataFrame, schemaInfo: Dict[str, Tuple] = S
     - Only columns with a non-None numpy dtype in schemaInfo are included.
     - Any ValueError during conversion prints the offending column names for debugging.
     """
-    ret_val: Dict[str, np.ndarray] = {}
+    ret_val: dict[str, np.ndarray] = {}
     for col, info in schemaInfo.items():
         if col not in df.columns:
             continue
@@ -292,7 +287,7 @@ def get_root_data_with_schema(df: pd.DataFrame, schemaInfo: Dict[str, Tuple] = S
     return ret_val
 
 
-def build_empty_root_data_with_schema(schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info, schema: pa.Schema = None) -> Dict[str, np.ndarray]:
+def build_empty_root_data_with_schema(schemaInfo: dict[str, tuple] = SAMPIC_Schema_Info, schema: pa.Schema = None) -> dict[str, np.ndarray]:
     """
     Construct an empty data dictionary for ROOT branches based on schema.
 
@@ -316,7 +311,7 @@ def build_empty_root_data_with_schema(schemaInfo: Dict[str, Tuple] = SAMPIC_Sche
     - Fixed-size array fields (length provided in schemaInfo[3]) produce 2D arrays
       with shape (0, size).
     """
-    ret_val: Dict[str, np.ndarray] = {}
+    ret_val: dict[str, np.ndarray] = {}
     for col, info in schemaInfo.items():
         if schema is not None:
             if col not in schema.names:
@@ -337,7 +332,7 @@ def build_empty_root_data_with_schema(schemaInfo: Dict[str, Tuple] = SAMPIC_Sche
     return ret_val
 
 
-def prepare_header_metadata_in_bytes(metadata: Dict[str, Any]) -> Dict[bytes, bytes]:
+def prepare_header_metadata_in_bytes(metadata: dict[str, Any]) -> dict[bytes, bytes]:
     """
     Convert a metadata dictionary of Python values to a bytes-to-bytes mapping suitable for Arrow.
 
@@ -383,7 +378,7 @@ def prepare_header_metadata_in_bytes(metadata: Dict[str, Any]) -> Dict[bytes, by
     - Use this mapping as the `schema.metadata` for PyArrow Schema or
       as the `metadata` argument in Feather/Parquet writers.
     """
-    retVal: Dict[bytes, bytes] = {}
+    retVal: dict[bytes, bytes] = {}
 
     for key, val in metadata.items():
         new_key = key.encode('ascii')
@@ -504,8 +499,8 @@ class SampicHeader:
     sampic_mezzanine_board_version: str = ""
     num_channels: int = 0
     ctrl_fpga_firmware_version: str = ""
-    front_end_fpga_firmware_version: List[str] = field(default_factory=list)
-    front_end_fpga_baseline: List[float] = field(default_factory=list)
+    front_end_fpga_firmware_version: list[str] = field(default_factory=list)
+    front_end_fpga_baseline: list[float] = field(default_factory=list)
     sampling_frequency: str = ""
     enabled_channels_mask: int = 0
     reduced_data_type: bool = False
@@ -581,7 +576,7 @@ class SAMPIC_Run_Decoder:
         extra_header_bytes: int,
         chunk_size: int = 64 * 1024,
         debug: bool = False,
-    ) -> Generator[Tuple[bytes, Generator[bytes, None, None]], None, None]:
+    ) -> Generator[tuple[bytes, Generator[bytes, None, None]], None, None]:
         """
         Memory-map a SAMPIC file, extract its header, and stream the remainder in chunks.
 
@@ -900,7 +895,7 @@ class SAMPIC_Run_Decoder:
         timestamp_window_size: int = 64,  # new
         max_out_of_time_s: float = 10,  # new
         debug=False,
-    ) -> Generator[Dict[str, Any], None, None]:
+    ) -> Generator[dict[str, Any], None, None]:
         """
         Stream and decode hit records from all files in the run.
 
@@ -1132,7 +1127,7 @@ class SAMPIC_Run_Decoder:
         max_time_counter_ps = calculate_wrap_offset_ps(coarse_bit_depth, coarse_freq_hz)
 
         # Helper to try parsing one record from the buffer
-        def try_parse_record(field_specs) -> Dict[str, Any] | None:
+        def try_parse_record(field_specs) -> dict[str, Any] | None:
             view = memoryview(buffer)
 
             # First ensure we have at least the fixed portion
@@ -1141,7 +1136,7 @@ class SAMPIC_Run_Decoder:
                 return None  # need more data
 
             # Parse fixed fields to extract the fixed portion, counts should be in this portion so we can parse the rest of the data structure
-            record: Dict[str, Any] = {
+            record: dict[str, Any] = {
                 # Coordination
                 "HitNumber": None,
                 # From SAMPIC
@@ -1306,7 +1301,7 @@ class SAMPIC_Run_Decoder:
                 record["FirstCellIndex"] = 64 - record.pop("CellInfo")
 
             if not self.run_header.compact_binary_data and "TriggerPosition" in record:
-                triggers: List = record.pop("TriggerPosition")
+                triggers: list = record.pop("TriggerPosition")
                 record["NumTriggerSamples"] = triggers.count(1)
 
             # Add here to reorder the samples inside the hit if needed
@@ -1394,7 +1389,7 @@ class SAMPIC_Run_Decoder:
 
         return
 
-    def prepare_header_metadata(self) -> Dict[bytes, bytes]:
+    def prepare_header_metadata(self) -> dict[bytes, bytes]:
         """
         Pack run-header attributes into raw byte metadata for columnar files.
 
@@ -1419,15 +1414,15 @@ class SAMPIC_Run_Decoder:
         Arrow metadata API expectations. This preserves full fidelity for
         programmatic reloading via `decode_byte_metadata`.
         """
-        retVal: Dict[bytes, bytes] = {
+        retVal: dict[bytes, bytes] = {
             b'sampiclyser_version': self.run_header.sampiclyser_version.encode('ascii'),
             b'software_version': self.run_header.software_version.encode('ascii'),
             b'timestamp': struct.pack('<d', self.run_header.timestamp.timestamp()),
             b'sampic_mezzanine_board_version': self.run_header.sampic_mezzanine_board_version.encode('ascii'),
             b'num_channels': struct.pack('<I', self.run_header.num_channels),
             b'ctrl_fpga_firmware_version': self.run_header.ctrl_fpga_firmware_version.encode('ascii'),
-            # front_end_fpga_firmware_version: List[str] = field(default_factory=list)
-            # front_end_fpga_baseline: List[float] = field(default_factory=list)
+            # front_end_fpga_firmware_version: list[str] = field(default_factory=list)
+            # front_end_fpga_baseline: list[float] = field(default_factory=list)
             b'sampling_frequency': self.run_header.sampling_frequency.encode('ascii'),
             b'enabled_channels_mask': struct.pack('<I', self.run_header.enabled_channels_mask),
             b'reduced_data_type': b'\x01' if self.run_header.reduced_data_type else b'\x00',
@@ -1449,7 +1444,7 @@ class SAMPIC_Run_Decoder:
 
         return retVal
 
-    def prepare_root_header_metadata(self) -> Dict[str, object]:
+    def prepare_root_header_metadata(self) -> dict[str, object]:
         """
         Build a Python-native metadata dict for ROOT TTree output.
 
@@ -1487,15 +1482,15 @@ class SAMPIC_Run_Decoder:
         All values are in their natural Python form (no byte-packing), ready
         for conversion to Awkward or NumPy arrays when writing via uproot.
         """
-        retVal: Dict[str, object] = {
+        retVal: dict[str, object] = {
             'sampiclyser_version': self.run_header.sampiclyser_version,
             'software_version': self.run_header.software_version,
             'timestamp': self.run_header.timestamp,
             'sampic_mezzanine_board_version': self.run_header.sampic_mezzanine_board_version,
             'num_channels': self.run_header.num_channels,
             'ctrl_fpga_firmware_version': self.run_header.ctrl_fpga_firmware_version,
-            # front_end_fpga_firmware_version: List[str] = field(default_factory=list)
-            # front_end_fpga_baseline: List[float] = field(default_factory=list)
+            # front_end_fpga_firmware_version: list[str] = field(default_factory=list)
+            # front_end_fpga_baseline: list[float] = field(default_factory=list)
             'sampling_frequency': self.run_header.sampling_frequency,
             'enabled_channels_mask': self.run_header.enabled_channels_mask,
             'reduced_data_type': self.run_header.reduced_data_type,
@@ -1560,9 +1555,9 @@ class SAMPIC_Run_Decoder:
     def decode_data(  # noqa: max-complexity=24
         self,
         limit_hits: int = 0,
-        feather_path: Optional[Path] = None,
-        parquet_path: Optional[Path] = None,
-        root_path: Optional[Path] = None,
+        feather_path: Path | None = None,
+        parquet_path: Path | None = None,
+        root_path: Path | None = None,
         root_tree: str = "sampic_hits",
         extra_header_bytes: int = 1,
         chunk_size: int = 64 * 1024,

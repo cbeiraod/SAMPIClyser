@@ -27,22 +27,16 @@ import itertools
 import math
 import struct
 from collections import Counter
+from collections.abc import Generator
+from collections.abc import Iterator
+from collections.abc import Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
 from typing import Any
-from typing import Dict
-from typing import Generator
-from typing import Iterator
-from typing import List
 from typing import Literal
-from typing import Optional
-from typing import Sequence
-from typing import Set
-from typing import Tuple
 from typing import TypeVar
-from typing import Union
 
 import awkward as ak
 import matplotlib.pyplot as plt
@@ -128,7 +122,7 @@ def set_mplhep_style(style: str = "CMS"):
 
 def open_hit_reader(
     file_path: Path, cols: Sequence[str], batch_size: int = 100_000, root_tree: str = "sampic_hits"
-) -> Iterator[Union[RecordBatch, ak.highlevel.Array]]:
+) -> Iterator[RecordBatch | ak.highlevel.Array]:
     """
     Stream selected columns from a SAMPIC output file in memory-efficient batches.
 
@@ -1270,11 +1264,11 @@ def apply_interpolation_method(
     x_orig: np.ndarray,
     y_orig: np.ndarray,
     period: float,
-    interpolation_method: Optional[str] = "sinc",
+    interpolation_method: str | None = "sinc",
     interpolation_factor: int = 4,
     interpolation_parameter: int = 8,
-    offset: Optional[float] = None,
-) -> Tuple[np.ndarray, np.ndarray]:
+    offset: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Interpolate a uniformly sampled waveform using various methods.
 
@@ -1383,8 +1377,8 @@ def apply_interpolation_method(
 
 
 def select_waveforms(
-    batches: Iterator[Union[RecordBatch, ak.highlevel.Array]], first_hit: int, num_hits: int, channel_filter: Optional[Set[int]] = None
-) -> Iterator[Tuple[int, float, int, np.ndarray, np.ndarray]]:
+    batches: Iterator[RecordBatch | ak.highlevel.Array], first_hit: int, num_hits: int, channel_filter: set[int] | None = None
+) -> Iterator[tuple[int, float, int, np.ndarray, np.ndarray]]:
     """
     Flatten record batches or Awkward arrays into individual waveform records,
     with optional hit-index slicing and channel filtering.
@@ -1478,7 +1472,7 @@ def reorder_circular_samples_with_trigger(
     trig_arr: np.ndarray,
     samp_arr: np.ndarray,
     reorder_samples: bool,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Rotate a circular buffer so that the contiguous trigger block (1s) appears at the end.
 
@@ -1598,7 +1592,7 @@ def plot_waveform(
     trig_arr: np.ndarray,
     period: float,
     color: Any,
-    interp_kwargs: Dict[str, Any],
+    interp_kwargs: dict[str, Any],
     label_mode: Literal['channel', 'hit', 'both', 'none'],
     reorder_circular_buffer: bool,
     reorder_samp_arr: bool,
@@ -1885,9 +1879,9 @@ def ordinal(n: int) -> str:
 def set_waveform_titles_and_labels(
     ax: Axes,
     file_path: Path,
-    file_name_id: Optional[str] = None,
-    title: Optional[str] = None,
-    channel_filter: Optional[List[int]] = None,
+    file_name_id: str | None = None,
+    title: str | None = None,
+    channel_filter: list[int] | None = None,
     first_hit: int = 0,
     hits_plotted: int = 1,
     time_scale: float = 1.0,
@@ -2000,8 +1994,8 @@ def plot_channel_waveforms(
     batch_size: int = 100_000,
     first_hit: int = 0,
     num_hits: int = 10,
-    channel_filter: Optional[list[int]] = None,
-    interpolation_method: Optional[str] = "sinc",
+    channel_filter: list[int] | None = None,
+    interpolation_method: str | None = "sinc",
     interpolation_factor: int = 4,
     interpolation_parameter: int = 8,
     label: str = "PPS",
@@ -2009,9 +2003,9 @@ def plot_channel_waveforms(
     figsize: tuple[float, float] = (6, 4),
     rlabel: str = "(13 TeV)",
     is_data: bool = True,
-    title: Optional[str] = None,
-    file_name_id: Optional[str] = None,
-    cmap: Optional[str] = None,
+    title: str | None = None,
+    file_name_id: str | None = None,
+    cmap: str | None = None,
     time_scale: float = 10**9,
     plot_sample_types: bool = True,
 ) -> plt.Figure:
@@ -2222,7 +2216,7 @@ def sampic_reconstruct_time_dict(rec: dict) -> float:
     return rec['FirstSampleTime_in_ps'], rec['FirstSampleTime_in_ps_fine']
 
 
-def extract_ts_unix_time(batch: Union[RecordBatch, ak.highlevel.Array], idx: int) -> float:
+def extract_ts_unix_time(batch: RecordBatch | ak.highlevel.Array, idx: int) -> float:
     """
     Extract a single hit timestamp from the 'UnixTime' column in a batch.
 
@@ -2272,7 +2266,7 @@ def extract_ts_unix_time(batch: Union[RecordBatch, ak.highlevel.Array], idx: int
     raise TypeError(f"Unsupported batch type {type(batch)}, expected RecordBatch or ak.Array")
 
 
-def extract_ts_SAMPIC(batch: Union[RecordBatch, ak.highlevel.Array], idx: int) -> float:
+def extract_ts_SAMPIC(batch: RecordBatch | ak.highlevel.Array, idx: int) -> float:
     """
     Reconstruct a hit timestamp using SAMPIC-specific logic from a batch record.
 
@@ -2336,7 +2330,7 @@ def extract_ts_SAMPIC(batch: Union[RecordBatch, ak.highlevel.Array], idx: int) -
     return ts, ts_fine
 
 
-def extract_unix_time_and_record(batch: Union[RecordBatch, ak.highlevel.Array], idx: int) -> Tuple[float, Dict[str, Any]]:
+def extract_unix_time_and_record(batch: RecordBatch | ak.highlevel.Array, idx: int) -> tuple[float, dict[str, Any]]:
     """
     Extract the UnixTime timestamp and full record from a batch at a given index.
 
@@ -2375,7 +2369,7 @@ def extract_unix_time_and_record(batch: Union[RecordBatch, ak.highlevel.Array], 
     else:
         raise TypeError(f"Unsupported batch type {type(batch)}; expected RecordBatch or ak.Array")
 
-    rec: Dict[str, Any] = {}
+    rec: dict[str, Any] = {}
     # Extract all fields
     for col in field_names:
         try:
@@ -2399,7 +2393,7 @@ def extract_unix_time_and_record(batch: Union[RecordBatch, ak.highlevel.Array], 
     return ts, 0.0, rec
 
 
-def extract_SAMPIC_time_and_record(batch: Union[RecordBatch, ak.highlevel.Array], idx: int) -> Tuple[float, Dict[str, Any]]:
+def extract_SAMPIC_time_and_record(batch: RecordBatch | ak.highlevel.Array, idx: int) -> tuple[float, dict[str, Any]]:
     """
     Reconstruct SAMPIC hit timestamp and return full record from a batch.
 
@@ -2439,7 +2433,7 @@ def extract_SAMPIC_time_and_record(batch: Union[RecordBatch, ak.highlevel.Array]
     else:
         raise TypeError(f"Unsupported batch type {type(batch)}; expected RecordBatch or ak.Array")
 
-    rec: Dict[str, Any] = {}
+    rec: dict[str, Any] = {}
     # Extract all fields
     for col in field_names:
         try:
@@ -2463,7 +2457,7 @@ def extract_SAMPIC_time_and_record(batch: Union[RecordBatch, ak.highlevel.Array]
 
 def check_time_ordering(
     file_path: Path, use_unix_time: bool = False, find_all: bool = False, batch_size: int = 100_000, root_tree: str = "sampic_hits"
-) -> List[Tuple[int, float, float]]:
+) -> list[tuple[int, float, float]]:
     """
     Verify that hit records in a SAMPIC output file are non-decreasing in time.
 
@@ -2503,9 +2497,9 @@ def check_time_ordering(
         is provided in `_reconstruct_time`.
     """
 
-    violations: List[Tuple[int, float, float]] = []
-    last_time: Optional[Union[float, int]] = None
-    last_time_fine: Optional[float] = None
+    violations: list[tuple[int, float, float]] = []
+    last_time: float | int | None = None
+    last_time_fine: float | None = None
     hit_idx = 0
 
     # Select extractor
@@ -2541,15 +2535,15 @@ def check_time_ordering(
 @contextmanager
 def reprocess_data_files(
     input_path: Path,
-    output_feather_path: Optional[Path] = None,
-    output_parquet_path: Optional[Path] = None,
-    output_root_path: Optional[Path] = None,
+    output_feather_path: Path | None = None,
+    output_parquet_path: Path | None = None,
+    output_root_path: Path | None = None,
     root_tree: str = "sampic_hits",
-    schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info,
-    new_columns: Optional[List[str]] = None,
-    restrict_columns: Optional[List[str]] = None,
+    schemaInfo: dict[str, tuple] = SAMPIC_Schema_Info,
+    new_columns: list[str] | None = None,
+    restrict_columns: list[str] | None = None,
 ) -> Generator[
-    Tuple[List[str], pa.Schema, Optional[ipc.RecordBatchFileWriter], Optional[pq.ParquetWriter], Optional[uproot.writing.WritableTree]]
+    tuple[list[str], pa.Schema, ipc.RecordBatchFileWriter | None, pq.ParquetWriter | None, uproot.writing.WritableTree | None], None, None
 ]:
     """
     Context manager to open/prepare readers and writers for re-processing SAMPIC data.
@@ -2687,12 +2681,12 @@ def reprocess_data_files(
 
 
 def _write_to_outputs(
-    rec: Dict[str, Any],
+    rec: dict[str, Any],
     schema: pa.Schema,
-    schemaInfo: Dict[str, Tuple],
-    feather_writer: Optional[Any],
-    parquet_writer: Optional[pq.ParquetWriter],
-    root_tree_obj: Optional[Any],
+    schemaInfo: dict[str, tuple],
+    feather_writer: Any | None,
+    parquet_writer: pq.ParquetWriter | None,
+    root_tree_obj: Any | None,
 ) -> None:
     """
     Internal helper: write a single record to enabled output writers.
@@ -2714,14 +2708,14 @@ def _write_to_outputs(
 
 def reorder_hits(
     input_path: Path,
-    output_feather_path: Optional[Path] = None,
-    output_parquet_path: Optional[Path] = None,
-    output_root_path: Optional[Path] = None,
+    output_feather_path: Path | None = None,
+    output_parquet_path: Path | None = None,
+    output_root_path: Path | None = None,
     root_tree: str = "sampic_hits",
     use_unix_time: bool = False,
     batch_size: int = 100_000,
-    max_time_offset: Optional[float] = None,
-    schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info,
+    max_time_offset: float | None = None,
+    schemaInfo: dict[str, tuple] = SAMPIC_Schema_Info,
 ) -> None:
     """
     Stream and reorder hit records into non-decreasing time order, writing to a new file.
@@ -2794,7 +2788,7 @@ def reorder_hits(
             extractor = lambda batch, i: extract_SAMPIC_time_and_record(batch, i)
             max_time_offset = max_time_offset * 10**12
 
-        heap: List[TimestampedRecord] = []
+        heap: list[TimestampedRecord] = []
         current_max_time = None
 
         # Stream input
@@ -2821,7 +2815,7 @@ def reorder_hits(
 
 
 # TODO: Update this function to use the schema info to decide if jagged branches are allowed or not
-def prepare_root_dict_from_recordbatch(record_batch: RecordBatch) -> Dict[str, np.ndarray]:
+def prepare_root_dict_from_recordbatch(record_batch: RecordBatch) -> dict[str, np.ndarray]:
     """
     Convert an Arrow RecordBatch into a dict of NumPy arrays for ROOT output.
 
@@ -2867,7 +2861,7 @@ def prepare_root_dict_from_recordbatch(record_batch: RecordBatch) -> Dict[str, n
     >>> out['trigger'].shape
     (3, 2)
     """
-    out: Dict[str, np.ndarray] = {}
+    out: dict[str, np.ndarray] = {}
     n_rows = record_batch.num_rows
 
     for col in record_batch.schema.names:
@@ -2908,12 +2902,12 @@ def prepare_root_dict_from_recordbatch(record_batch: RecordBatch) -> Dict[str, n
 
 def reprocess_noop(
     input_path: Path,
-    output_feather_path: Optional[Path] = None,
-    output_parquet_path: Optional[Path] = None,
-    output_root_path: Optional[Path] = None,
+    output_feather_path: Path | None = None,
+    output_parquet_path: Path | None = None,
+    output_root_path: Path | None = None,
     root_tree: str = "sampic_hits",
     batch_size: int = 100_000,
-    schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info,
+    schemaInfo: dict[str, tuple] = SAMPIC_Schema_Info,
     fast: bool = False,
 ) -> None:
     """
