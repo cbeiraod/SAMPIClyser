@@ -292,7 +292,7 @@ def get_root_data_with_schema(df: pd.DataFrame, schemaInfo: Dict[str, Tuple] = S
     return ret_val
 
 
-def build_empty_root_data_with_schema(schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info) -> Dict[str, np.ndarray]:
+def build_empty_root_data_with_schema(schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info, schema: pa.Schema = None) -> Dict[str, np.ndarray]:
     """
     Construct an empty data dictionary for ROOT branches based on schema.
 
@@ -302,6 +302,8 @@ def build_empty_root_data_with_schema(schemaInfo: Dict[str, Tuple] = SAMPIC_Sche
         Mapping of column names to schema tuples of the form:
         (pandas_dtype, pyarrow_type, numpy_dtype, [optional array size]).
         The numpy_dtype at index 2 and optional array size at index 3 are used.
+    schema : pyarrow.Schema (optional)
+        Pyarrow schema file of which columns to actually use
 
     Returns
     -------
@@ -316,6 +318,9 @@ def build_empty_root_data_with_schema(schemaInfo: Dict[str, Tuple] = SAMPIC_Sche
     """
     ret_val: Dict[str, np.ndarray] = {}
     for col, info in schemaInfo.items():
+        if schema is not None:
+            if col not in schema.names:
+                continue
         numpy_dtype = None
         arr_size = None
         if len(info) > 2:
