@@ -599,7 +599,7 @@ def plot_hitmap(
             fig.text(
                 1,
                 1,  # (x, y) in figure coords
-                "(Downstream global coordinates)",  # the string
+                "(Upstream global coordinates)",  # the string
                 ha='right',  # align right edge
                 va='top',  # align top edge
                 transform=fig.transFigure,  # figure coordinate system
