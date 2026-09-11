@@ -449,6 +449,7 @@ def plot_hit_rate(
     default=None,
     help='The plot title to put at the top of the figure. Default: None',
 )
+@click.option('--unixtime', 'use_unixtime', is_flag=True, help='Use unix time instead of proper time')
 def plot_channel_hit_rate(
     decoded_file: Path,
     channel: int,
@@ -467,6 +468,7 @@ def plot_channel_hit_rate(
     rlabel: str,
     is_data: bool,
     title: str,
+    use_unixtime: bool,
 ):
     """
     Plot hit rate of a specific SAMPIC channel vs time from a decoded SAMPIC run file.
@@ -488,6 +490,7 @@ def plot_channel_hit_rate(
         rlabel=rlabel,
         is_data=is_data,
         title=title,
+        use_unixtime=use_unixtime,
     )
 
     if output:

@@ -12,6 +12,7 @@ Current (2026-09-09)
 * Added a guard to not accidentally try processing the trigger file as data
 * Fixed metadata parsing for root files
 * Updated plot_hit_rate and plot_hit_rate entrypoint to be compatible with new unified format
+* Updated plot_channel_hit_rate and plot_channel_hit_rate entrypoint to be compatible with new unified format
 
 
 0.1.2 (2025-10-16)
