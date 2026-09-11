@@ -33,6 +33,7 @@ from dataclasses import field
 from pathlib import Path
 from typing import Any
 from typing import Dict
+from typing import Generator
 from typing import Iterator
 from typing import List
 from typing import Literal
@@ -2547,7 +2548,7 @@ def reprocess_data_files(
     schemaInfo: Dict[str, Tuple] = SAMPIC_Schema_Info,
     new_columns: Optional[List[str]] = None,
     restrict_columns: Optional[List[str]] = None,
-) -> Iterator[
+) -> Generator[
     Tuple[List[str], pa.Schema, Optional[ipc.RecordBatchFileWriter], Optional[pq.ParquetWriter], Optional[uproot.writing.WritableTree]]
 ]:
     """
@@ -2989,6 +2990,7 @@ def reprocess_noop(
                 record_batch = batch
             else:
                 arrays = [np.asarray(batch[col]) for col in columns]
+                # This does not work at the moment... I think it is choking on the samples structure... which is not a simple array for a batch
                 record_batch = RecordBatch.from_arrays(arrays, columns)
 
             # 2) Write out in Feather IPC (full batches)
