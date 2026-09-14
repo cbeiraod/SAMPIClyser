@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Current (2026-09-14)
---------------------
+0.2.1 (2026-09-14)
+------------------
 
 * Fixed typing to follow modern practice
 * Updated waveform yielding to use a waveform record
