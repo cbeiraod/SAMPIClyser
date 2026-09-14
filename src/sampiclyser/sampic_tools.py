@@ -96,6 +96,41 @@ class TimestampedRecord:
     record: Any = field(compare=False)
 
 
+@dataclass(order=True)
+class WaveformRecord:
+    """
+    Container for SAMPIC waveform data, sortable uniquely by hit number.
+
+    Attributes
+    ----------
+    hit_number : int
+        The unique identifier or chronological sequence number of the hit.
+        Used as the sole key for sorting and comparisons.
+    channel : int
+        The physical or logical channel that recorded the waveform.
+    samples : int
+        The total number of digitized samples in the waveform.
+    data_samples : list of float
+        The array of voltage or ADC values representing the waveform.
+    first_cell_index : int
+        The physical index of the first sampling cell in the switched capacitor
+        array (e.g., the ring buffer starting position).
+    trigger_samples : int or None
+        The number of samples associated with the trigger threshold crossing,
+        if available.
+    baseline : float or None
+        The calculated baseline offset for the waveform, if available.
+    """
+
+    hit_number: int
+    channel: int = field(compare=False)
+    samples: int = field(compare=False)
+    data_samples: list[float] = field(compare=False)
+    first_cell_index: int = field(compare=False)
+    trigger_samples: int | None = field(compare=False)
+    baseline: float | None = field(compare=False)
+
+
 def set_mplhep_style(style: str = "CMS"):
     global sampiclyser_style
     if style == "CMS":
@@ -1377,7 +1412,11 @@ def apply_interpolation_method(
 
 
 def select_waveforms(
-    batches: Iterator[RecordBatch | ak.highlevel.Array], first_hit: int, num_hits: int, channel_filter: set[int] | None = None
+    batches: Iterator[RecordBatch | ak.highlevel.Array],
+    first_hit: int,
+    num_hits: int,
+    channel_filter: set[int] | None = None,
+    calculate_baseline: bool = True,
 ) -> Iterator[tuple[int, float, int, np.ndarray, np.ndarray]]:
     """
     Flatten record batches or Awkward arrays into individual waveform records,
@@ -1387,13 +1426,17 @@ def select_waveforms(
     ----------
     batches : iterator of RecordBatch or awkward.highlevel.Array
         Stream of data blocks each containing the fields
-        `'HITNumber'`, `'Channel'`, `'Baseline'`, `'DataSize'`, `'TriggerPosition'`, and `'DataSample'`.
+        `'HitNumber'`, `'Channel'`, `'DataSize'`, `'DataSample'`, and `'FirstCellIndex'`.
+        Optionally also stream `'NumTriggerSamples'`.
     first_hit : int
         Number of initial hits to skip before yielding.
     num_hits : int
         Maximum number of hits to yield after skipping `first_hit`.
     channel_filter : set of int or None, optional
         If provided, only waveforms whose channel index is in this set are yielded.
+    calculate_baseline : bool, default True
+        If the baseline of the waveform should be computed on the fly or if the SAMPIC-computed value should be used.
+        To calculate the baseline, the first sample is ignored and the next 20 samples are averaged.
 
     Yields
     ------
@@ -1401,14 +1444,14 @@ def select_waveforms(
         The sequential hit number given by SAMPIC to this waveform.
     channel : int
         SAMPIC channel index for this waveform.
-    baseline : float
-        Baseline offset for the waveform.
     n_samples : int
-        Number of ADC samples in this waveform.
-    trigger_positions : ndarray of int
-        1D array of length `n_samples`, with 0/1 indicating trigger positions.
+        Number of samples in this waveform.
     samples : ndarray of float
         1D array of length `n_samples` containing the ADC values.
+    first_cell_index : int
+        Index of the first cell in the circular buffer
+    trigger_samples : int | None
+        The number of trigger samples
 
     Raises
     ------
@@ -1421,9 +1464,12 @@ def select_waveforms(
       an Awkward Array (indexable by field name).
     - Stops iteration once `num_hits` waveforms have been yielded.
     """
-    required_fields = {"HITNumber", "Channel", "Baseline", "DataSize", "TriggerPosition", "DataSample"}
+    required_fields = {"HitNumber", "Channel", "DataSize", "DataSample", "FirstCellIndex"}
+    # required_fields.add("NumTriggerSamples")
     count = 0
     yielded = 0
+    has_trigger = None
+    has_baseline = False if calculate_baseline else None
 
     for batch in batches:
         # Verify required fields exist
@@ -1432,22 +1478,46 @@ def select_waveforms(
         if missing:
             raise ValueError(f"Batch is missing required fields: {missing}")
 
+        # Determine if num trigger samples information is present
+        if has_trigger is None:
+            if "NumTriggerSamples" in batch_fields:
+                has_trigger = True
+            else:
+                has_trigger = False
+
+        # Determine if baseline information is present
+        if has_baseline is None:
+            if "Baseline" in batch_fields:
+                has_baseline = True
+            else:
+                has_baseline = False
+
         # Extract common columns
-        hitids = batch['HITNumber'].to_numpy()
+        hitids = batch['HitNumber'].to_numpy()
         channels = batch['Channel'].to_numpy()
-        baselines = batch['Baseline'].to_numpy()
         sizes = batch['DataSize'].to_numpy()
+        first_cells = batch['FirstCellIndex'].to_numpy()
+
+        if has_trigger:
+            trigger_samples = batch['NumTriggerSamples'].to_numpy()
+        else:
+            trigger_samples = np.full(hitids.shape, None, dtype=object)
+
+        if has_baseline:
+            baselines = batch['Baseline'].to_numpy()
+        else:
+            baselines = np.full(hitids.shape, None, dtype=object)
 
         # Extract trigger positions and samples, allowing copy for Arrow
         if hasattr(batch, "column"):
-            triggers = batch["TriggerPosition"].to_numpy(zero_copy_only=False)
             samples = batch["DataSample"].to_numpy(zero_copy_only=False)
         else:
-            triggers = batch["TriggerPosition"].to_numpy()
             samples = batch["DataSample"].to_numpy()
 
         # Iterate waveform by waveform
-        for hid, ch, bl, n, tp, data in zip(hitids, channels, baselines, sizes, triggers, samples):
+        for hid, ch, n, data, first_cell, n_trigger, baseline in zip(
+            hitids, channels, sizes, samples, first_cells, trigger_samples, baselines
+        ):
             # Channel filter
             if channel_filter is not None and ch not in channel_filter:
                 count += 1
@@ -1462,8 +1532,24 @@ def select_waveforms(
             if yielded >= num_hits:
                 return
 
+            if calculate_baseline:
+                samples = data[1:21]
+                baseline = np.average(data[1:21])
+                print(type(samples))
+                print(samples)
+                print(type(baseline))
+                print(baseline)
+
             # Yield the waveform tuple
-            yield int(hid), int(ch), float(bl), int(n), np.asarray(tp), np.asarray(data)
+            yield WaveformRecord(
+                hit_number=hid,
+                channel=ch,
+                samples=n,
+                data_samples=np.asarray(data),
+                first_cell_index=first_cell,
+                trigger_samples=n_trigger,
+                baseline=baseline,
+            )
             count += 1
             yielded += 1
 
