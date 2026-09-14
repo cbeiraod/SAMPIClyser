@@ -1535,10 +1535,6 @@ def select_waveforms(
             if calculate_baseline:
                 samples = data[1:21]
                 baseline = np.average(data[1:21])
-                print(type(samples))
-                print(samples)
-                print(type(baseline))
-                print(baseline)
 
             # Yield the waveform tuple
             yield WaveformRecord(
