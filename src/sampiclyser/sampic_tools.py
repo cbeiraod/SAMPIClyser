@@ -1490,6 +1490,7 @@ def select_waveforms(
             yielded += 1
 
 
+# Function no longer used... probably delete it soon
 def reorder_circular_samples_with_trigger(
     trig_arr: np.ndarray,
     samp_arr: np.ndarray,
@@ -1607,17 +1608,12 @@ def reorder_circular_samples_with_trigger(
 
 def plot_waveform(
     ax: plt.Axes,
-    hid: int,
-    channel: int,
-    baseline: float,
-    samp_arr: np.ndarray,
-    trig_arr: np.ndarray,
+    waveform: WaveformRecord,
     period: float,
     color: Any,
     interp_kwargs: dict[str, Any],
     label_mode: Literal['channel', 'hit', 'both', 'none'],
     reorder_circular_buffer: bool,
-    reorder_samp_arr: bool,
     plot_sample_types: bool,
     plot_buffer_start: bool,
     explicit_labels: bool,
@@ -1631,16 +1627,18 @@ def plot_waveform(
     ----------
     ax : matplotlib.axes.Axes
         The axes to draw on.
-    hid : int
-        Hit index (used when `plot_single_channel=True` to label each hit).
-    channel : int
-        SAMPIC channel number (used in legend when `plot_single_channel=False`).
-    baseline : float
-        Baseline offset to add back to interpolated samples.
-    samp_arr : ndarray of float, shape (N,)
-        Raw ADC sample values.
-    trig_arr : ndarray of {0,1}, shape (N,)
-        Trigger markers, with a contiguous block of 1s (possibly wrapping).
+    waveform : WaveformRecord
+        The record with information about the recorded waveform, should contain at least:
+        - hid : int
+            Hit index (used when `plot_single_channel=True` to label each hit).
+        - channel : int
+            SAMPIC channel number (used in legend when `plot_single_channel=False`).
+        - baseline : float
+            Baseline offset to add back to interpolated samples.
+        - samp_arr : ndarray of float, shape (N,)
+            Raw ADC sample values.
+        - trig_arr : ndarray of {0,1}, shape (N,)
+            Trigger markers, with a contiguous block of 1s (possibly wrapping).
     period : float
         Time interval between samples in seconds.
     color : any
@@ -1657,10 +1655,8 @@ def plot_waveform(
         - 'both': label waveforms with both channel number and hit id
         - 'none': do not label waveforms
     reorder_circular_buffer : bool
-        If True, rotate `trig_arr` (and optionally `samp_arr`) so trigger block
+        If True, rotate wavefrom samples (`waveform.data_samples`) so trigger block
         appears at the end.
-    reorder_samp_arr : bool
-        If `reorder_circular_buffer` is True, also rotate `samp_arr`.
     plot_sample_types : bool
         If True, uses separate markers for (non-trigger), (trigger), and
         (buffer start) samples. If False, plots all samples as dots.
@@ -1679,28 +1675,33 @@ def plot_waveform(
     Raises
     ------
     ValueError
-        If array lengths differ, or if `trig_arr` is not 1D or contains no 1s.
-        Passes through errors from `apply_interpolation_method` or
-        `reorder_circular_samples_with_trigger`.
+        If sample array is not 1D, or indexes trigger samples exceed the array bounds.
+        Passes through errors from `apply_interpolation_method`.
 
     Notes
     -----
     - Marker sizes are squared values (`s=marker_size**2`) for clarity.
     """
     # --- Input validation ---
-    n = trig_arr.size
-    if not (samp_arr.ndim == trig_arr.ndim == 1 and samp_arr.size == n):
-        raise ValueError("samp_arr, and trig_arr must be 1D arrays of equal length")
+    if waveform.data_samples.ndim != 1:
+        raise ValueError("Waveform sample array must be 1D arrays")
+    if waveform.trigger_samples is not None and waveform.trigger_samples > waveform.data_samples.size:
+        raise ValueError("Number of trigger samples is larger than waveform sample array...")
+    if waveform.first_cell_index >= waveform.data_samples.size:
+        raise ValueError("First cell index points outside the waveform sample array...")
+    n = waveform.data_samples.size
 
     # --- Optional circular reordering ---
     if reorder_circular_buffer:
-        trig_shifted, samp_shifted, start_mask = reorder_circular_samples_with_trigger(trig_arr, samp_arr, reorder_samp_arr)
-        start_mask = start_mask == 1
+        samp_shifted = np.roll(waveform.data_samples, waveform.first_cell_index)
     else:
-        trig_shifted = trig_arr
-        samp_shifted = samp_arr
-        start_mask = np.zeros(n, dtype=bool)
-        start_mask[0] = True
+        samp_shifted = waveform.data_samples
+    start_mask = np.zeros(n, dtype=bool)
+    start_mask[waveform.first_cell_index] = True
+    trig_shifted = np.zeros(n, dtype=int)
+    if waveform.trigger_samples is not None:
+        for idx in range(waveform.trigger_samples):
+            trig_shifted[n - 1 - idx] = 1
 
     # --- Built time array for plotting ---
     t_orig = np.arange(n, dtype=float) * period
@@ -1708,13 +1709,15 @@ def plot_waveform(
     # --- Interpolation & line plot ---
     method = interp_kwargs.get("interpolation_method")
     if method:
-        t_intp, y_intp = apply_interpolation_method(x_orig=t_orig, y_orig=samp_shifted, period=period, offset=baseline, **interp_kwargs)
+        t_intp, y_intp = apply_interpolation_method(
+            x_orig=t_orig, y_orig=samp_shifted, period=period, offset=waveform.baseline, **interp_kwargs
+        )
         if label_mode == "both":
-            label = f"Hit {hid} - Channel {channel}"
+            label = f"Hit {waveform.hit_number} - Channel {waveform.channel}"
         elif label_mode == "hit":
-            label = f"Hit {hid}"
+            label = f"Hit {waveform.hit_number}"
         elif label_mode == "channel":
-            label = f"Channel {channel}"
+            label = f"Channel {waveform.channel}"
         else:
             label = None
         ax.plot(t_intp * time_scale, y_intp, color=color, label=label)
@@ -2106,12 +2109,19 @@ def plot_channel_waveforms(
     # 1) get period
     run_metadata = get_file_metadata(file_path)
     period = get_period_from_file_metadata(run_metadata)
+    file_cols, _ = extract_columns_and_schema(file_path)
+
+    columns = ["HitNumber", "Channel", "DataSize", "DataSample", "FirstCellIndex"]
+    if "NumTriggerSamples" in file_cols:
+        columns += ["NumTriggerSamples"]
+    if "Baseline" in file_cols:
+        columns += ["Baseline"]
 
     # 2) Open reader
     try:
         batches = open_hit_reader(
             file_path,
-            ["HITNumber", "Channel", "Baseline", "DataSize", "DataSample", "TriggerPosition"],
+            columns,
             batch_size=batch_size,
             root_tree=root_tree,
         )
@@ -2145,9 +2155,8 @@ def plot_channel_waveforms(
         if channel_filter is not None and len(channel_filter) == 1:
             label_mode = "hit"
 
-        # These ideally shoould be extracted from the metadata, if at all possible
-        reorder_circular_buffer = True
-        reorder_samp_arr = False
+        # This shoould ideally be extracted from the metadata, if at all possible
+        reorder_circular_buffer = False
 
         if plot_sample_types:
             plot_buffer_start = True
@@ -2163,24 +2172,19 @@ def plot_channel_waveforms(
 
         # 5) Plot each
         hits_plotted = 0
-        for hid, channel, baseline, _, trig, samp in waveforms:
+        for waveform in waveforms:
             if label_mode == "channel":
-                color = channel_colors.setdefault(channel, next(color_cycle))
+                color = channel_colors.setdefault(waveform.channel, next(color_cycle))
             else:
                 color = next(color_cycle)
             plot_waveform(
                 ax,
-                hid,
-                channel,
-                baseline,
-                samp,
-                trig,
+                waveform,
                 period,
                 color,
                 interp_kwargs,
                 label_mode,
                 reorder_circular_buffer,
-                reorder_samp_arr,
                 plot_sample_types,
                 plot_buffer_start,
                 explicit_labels,
@@ -2552,6 +2556,64 @@ def check_time_ordering(
             hit_idx += 1
 
     return violations
+
+
+def extract_columns_and_schema(
+    input_path: Path,
+    root_tree: str = "sampic_hits",
+) -> tuple[list[str], pa.Schema | None]:
+    """
+    Extracts the column names and PyArrow schema from a decoded SAMPIC data file.
+
+    Reads the metadata from `input_path` (Parquet, Feather, or ROOT) to determine
+    the available columns and schema without loading the entire dataset into memory.
+
+    Parameters
+    ----------
+    input_path : pathlib.Path
+        Path to an existing decoded SAMPIC input file. Supported extensions:
+        .parquet/.pq, .feather, .root.
+    root_tree : str, optional
+        Name of the TTree to inspect for ROOT I/O (default: "sampic_hits").
+
+    Returns
+    ------
+    columns : list of str
+        The list of column names discovered in the input file.
+    schema : pyarrow.Schema or None
+        The Arrow schema extracted from the file. Returns None if the input
+        is a ROOT file, as ROOT does not natively store PyArrow schemas.
+
+    Raises
+    ------
+    ValueError
+        If `input_path` has an unsupported suffix.
+
+    Notes
+    -----
+    - For Feather files, `memory_map=True` is used to read the schema efficiently.
+    - For ROOT files, `uproot.open` is used to parse the TTree keys.
+    """
+    # Determine input format and read metadata
+    input_suffix = input_path.suffix.lower()
+
+    # Read existing schema/columns
+    if input_suffix in ('.parquet', '.pq'):
+        pqf = pq.ParquetFile(str(input_path))
+        columns = pqf.schema_arrow.names
+        schema = pqf.schema_arrow
+    elif input_suffix == '.feather':
+        rf = feather.read_table(str(input_path), memory_map=True)
+        columns = rf.schema.names
+        schema = rf.schema
+    elif input_suffix == '.root':
+        reader = uproot.open(str(input_path))
+        columns = list(reader[root_tree].keys())
+        schema = None
+    else:
+        raise ValueError(f"Unsupported file extension: {input_suffix}")
+
+    return columns, schema
 
 
 @contextmanager

@@ -6,6 +6,7 @@ Current (2026-09-14)
 
 * Fixed typing to follow modern practice
 * Updated waveform yielding to use a waveform record
+* Fixed waveform plotting with the new format
 
 
 0.2.0 (2026-09-09)
