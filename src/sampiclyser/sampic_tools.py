@@ -31,12 +31,9 @@ from collections.abc import Generator
 from collections.abc import Iterator
 from collections.abc import Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
-from dataclasses import field
 from pathlib import Path
 from typing import Any
 from typing import Literal
-from typing import TypeVar
 
 import awkward as ak
 import matplotlib.pyplot as plt
@@ -59,6 +56,8 @@ from pyarrow import RecordBatch
 from scipy.signal import resample
 from scipy.signal import resample_poly
 
+from sampiclyser.records import TimestampedRecord
+from sampiclyser.records import WaveformRecord
 from sampiclyser.sampic_decoder import SAMPIC_Schema_Info
 from sampiclyser.sampic_decoder import build_empty_root_data_with_schema
 from sampiclyser.sampic_decoder import build_schema
@@ -66,69 +65,6 @@ from sampiclyser.sampic_decoder import get_root_data_with_schema
 from sampiclyser.sampic_decoder import prepare_header_metadata_in_bytes
 
 sampiclyser_style = hep.style.CMS
-
-# Define a type variable restricted to int or float
-TimeType = TypeVar('TimeType', int, float)
-
-
-@dataclass(order=True)
-class TimestampedRecord:
-    """
-    Container for a hit record with an associated timestamp, sortable by time.
-
-    Attributes
-    ----------
-    timestamp : TimeType
-        The hit timestamp. Use `int` for exact picoseconds,
-        or `float` for legacy second (since epoch or reconstructed) configurations.
-    fine_timestamp : float
-        The sub-ps timestamp, when using the updated hit time logic implementing time
-        in ps counter and separate fine grain timing for sub ps timing
-    channel : int
-        The channel where the hit was recorded
-    record : Any
-        The full hit data (e.g., dict of field values).  Not used for ordering.
-    """
-
-    timestamp: TimeType
-    fine_timestamp: float
-    channel: int
-    record: Any = field(compare=False)
-
-
-@dataclass(order=True)
-class WaveformRecord:
-    """
-    Container for SAMPIC waveform data, sortable uniquely by hit number.
-
-    Attributes
-    ----------
-    hit_number : int
-        The unique identifier or chronological sequence number of the hit.
-        Used as the sole key for sorting and comparisons.
-    channel : int
-        The physical or logical channel that recorded the waveform.
-    samples : int
-        The total number of digitized samples in the waveform.
-    data_samples : list of float
-        The array of voltage or ADC values representing the waveform.
-    first_cell_index : int
-        The physical index of the first sampling cell in the switched capacitor
-        array (e.g., the ring buffer starting position).
-    trigger_samples : int or None
-        The number of samples associated with the trigger threshold crossing,
-        if available.
-    baseline : float or None
-        The calculated baseline offset for the waveform, if available.
-    """
-
-    hit_number: int
-    channel: int = field(compare=False)
-    samples: int = field(compare=False)
-    data_samples: list[float] = field(compare=False)
-    first_cell_index: int = field(compare=False)
-    trigger_samples: int | None = field(compare=False)
-    baseline: float | None = field(compare=False)
 
 
 def set_mplhep_style(style: str = "CMS"):
@@ -1417,7 +1353,7 @@ def select_waveforms(
     num_hits: int,
     channel_filter: set[int] | None = None,
     calculate_baseline: bool = True,
-) -> Iterator[tuple[int, float, int, np.ndarray, np.ndarray]]:
+) -> Iterator[WaveformRecord]:
     """
     Flatten record batches or Awkward arrays into individual waveform records,
     with optional hit-index slicing and channel filtering.
@@ -1440,18 +1376,22 @@ def select_waveforms(
 
     Yields
     ------
-    hit_number : int
-        The sequential hit number given by SAMPIC to this waveform.
-    channel : int
-        SAMPIC channel index for this waveform.
-    n_samples : int
-        Number of samples in this waveform.
-    samples : ndarray of float
-        1D array of length `n_samples` containing the ADC values.
-    first_cell_index : int
-        Index of the first cell in the circular buffer
-    trigger_samples : int | None
-        The number of trigger samples
+    waveform_record : WaveformRecord
+        A record containing structured information on the waveform
+        - hit_number : int
+            The sequential hit number given by SAMPIC to this waveform.
+        - channel : int
+            SAMPIC channel index for this waveform.
+        - n_samples : int
+            Number of samples in this waveform.
+        - samples : ndarray of float
+            1D array of length `n_samples` containing the ADC values.
+        - first_cell_index : int
+            Index of the first cell in the circular buffer
+        - trigger_samples : int | None
+            The number of trigger samples
+        - baseline : float | None
+            The computed baseline, either through SAMPIClyser or the SAMPIC derived one
 
     Raises
     ------
