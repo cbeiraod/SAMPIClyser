@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Current (2026-11-13)
---------------------
+0.2.2 (2026-11-13)
+------------------
 
 * Fixed waveform plotting for runs with Reduced = True, since it is missing one of the columns assumed to always exist
 
