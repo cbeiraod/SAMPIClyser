@@ -2111,7 +2111,9 @@ def plot_channel_waveforms(
     period = get_period_from_file_metadata(run_metadata)
     file_cols, _ = extract_columns_and_schema(file_path)
 
-    columns = ["HitNumber", "Channel", "DataSize", "DataSample", "FirstCellIndex"]
+    columns = ["HitNumber", "Channel", "DataSize", "DataSample"]
+    if "FirstCellIndex" in file_cols:
+        columns += ["FirstCellIndex"]
     if "NumTriggerSamples" in file_cols:
         columns += ["NumTriggerSamples"]
     if "Baseline" in file_cols:
