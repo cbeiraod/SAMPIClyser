@@ -1700,17 +1700,20 @@ def plot_waveform(
         raise ValueError("Waveform sample array must be 1D arrays")
     if waveform.trigger_samples is not None and waveform.trigger_samples > waveform.data_samples.size:
         raise ValueError("Number of trigger samples is larger than waveform sample array...")
-    if waveform.first_cell_index >= waveform.data_samples.size:
+    if waveform.first_cell_index is not None and waveform.first_cell_index >= waveform.data_samples.size:
         raise ValueError("First cell index points outside the waveform sample array...")
     n = waveform.data_samples.size
 
     # --- Optional circular reordering ---
+    if reorder_circular_buffer and waveform.first_cell_index is None:
+        raise RuntimeError("Asked to reorder samples yet first sample is not defined... it is not possible")
     if reorder_circular_buffer:
         samp_shifted = np.roll(waveform.data_samples, waveform.first_cell_index)
     else:
         samp_shifted = waveform.data_samples
     start_mask = np.zeros(n, dtype=bool)
-    start_mask[waveform.first_cell_index] = True
+    if waveform.first_cell_index is not None:
+        start_mask[waveform.first_cell_index] = True
     trig_shifted = np.zeros(n, dtype=int)
     if waveform.trigger_samples is not None:
         for idx in range(waveform.trigger_samples):
