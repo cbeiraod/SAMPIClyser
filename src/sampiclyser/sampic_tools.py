@@ -2177,7 +2177,7 @@ def plot_channel_waveforms(
         reorder_circular_buffer = False
 
         if plot_sample_types:
-            plot_buffer_start = True
+            plot_buffer_start = "FirstCellIndex" in file_cols
         else:
             plot_buffer_start = False
 
