@@ -1404,10 +1404,12 @@ def select_waveforms(
       an Awkward Array (indexable by field name).
     - Stops iteration once `num_hits` waveforms have been yielded.
     """
-    required_fields = {"HitNumber", "Channel", "DataSize", "DataSample", "FirstCellIndex"}
+    required_fields = {"HitNumber", "Channel", "DataSize", "DataSample"}
+    # required_fields.add("FirstCellIndex")
     # required_fields.add("NumTriggerSamples")
     count = 0
     yielded = 0
+    has_firstCell = None
     has_trigger = None
     has_baseline = False if calculate_baseline else None
 
@@ -1417,6 +1419,13 @@ def select_waveforms(
         missing = required_fields - batch_fields
         if missing:
             raise ValueError(f"Batch is missing required fields: {missing}")
+
+        # Determine if first cell index information is present
+        if has_firstCell is None:
+            if "FirstCellIndex" in batch_fields:
+                has_firstCell = True
+            else:
+                has_firstCell = False
 
         # Determine if num trigger samples information is present
         if has_trigger is None:
@@ -1436,7 +1445,11 @@ def select_waveforms(
         hitids = batch['HitNumber'].to_numpy()
         channels = batch['Channel'].to_numpy()
         sizes = batch['DataSize'].to_numpy()
-        first_cells = batch['FirstCellIndex'].to_numpy()
+
+        if has_firstCell:
+            first_cells = batch['FirstCellIndex'].to_numpy()
+        else:
+            first_cells = np.full(hitids.shape, None, dtype=object)
 
         if has_trigger:
             trigger_samples = batch['NumTriggerSamples'].to_numpy()
