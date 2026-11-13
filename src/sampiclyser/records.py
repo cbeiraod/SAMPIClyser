@@ -73,7 +73,7 @@ class WaveformRecord:
         The array of voltage or ADC values representing the waveform.
     first_cell_index : int
         The physical index of the first sampling cell in the switched capacitor
-        array (e.g., the ring buffer starting position).
+        array (e.g., the ring buffer starting position), if available.
     trigger_samples : int or None
         The number of samples associated with the trigger threshold crossing,
         if available.
@@ -85,6 +85,6 @@ class WaveformRecord:
     channel: int = field(compare=False)
     samples: int = field(compare=False)
     data_samples: list[float] = field(compare=False)
-    first_cell_index: int = field(compare=False)
+    first_cell_index: int | None = field(compare=False)
     trigger_samples: int | None = field(compare=False)
     baseline: float | None = field(compare=False)
